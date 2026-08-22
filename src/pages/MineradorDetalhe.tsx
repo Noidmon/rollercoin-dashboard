@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Card from '../components/Card'
+import MinerStatusIcons from '../components/MinerStatusIcons'
 import { formatPower } from '../utils/formatPower'
 import { parseMarketplacePaste } from '../utils/parseMarketplacePaste'
 import { mergeStoredPartPrices, readStoredPartPrices } from '../utils/partPriceStorage'
@@ -26,11 +27,17 @@ function formatRLT(value: number): string {
 }
 
 // Alpha aplicado sobre as cores exatas de nível (hex de 6 dígitos + alpha de
-// 2 dígitos = hex de 8 dígitos, suportado em todos os browsers evergreen) --
-// full opacity nas cores reais deixava o texto branco pouco legível em cima
-// de tons como o amarelo/dourado do nível V.
+// 2 dígitos = hex de 8 dígitos, suportado em todos os browsers evergreen).
 function levelColorWithAlpha(level: number, alphaHex: string): string {
   return `${getMergeLevelColor(level)}${alphaHex}`
+}
+
+// Limiares fixos (mesmos do aviso "Poder <1.5 por Ph" no topo da página) --
+// independente da cor de nível/raridade da linha.
+function getRatioColor(ratio: number): string {
+  if (ratio > 3.0) return '#DC2626'
+  if (ratio >= 1.5) return '#D97706'
+  return '#16A34A'
 }
 
 function LevelBadge({ level }: { level: number }) {
@@ -39,7 +46,7 @@ function LevelBadge({ level }: { level: number }) {
   if (imgFailed) {
     return (
       <span
-        className="flex h-8 w-10 items-center justify-center rounded text-xs font-bold text-white"
+        className="flex h-6 w-7 items-center justify-center rounded text-[10px] font-bold text-white"
         style={{ backgroundColor: getMergeLevelColor(level) }}
       >
         {toRoman(level)}
@@ -52,7 +59,7 @@ function LevelBadge({ level }: { level: number }) {
       src={resolveAssetUrl(`rollercoin/levels/level_${level}.webp`)}
       alt={toRoman(level)}
       onError={() => setImgFailed(true)}
-      className="h-8 w-10 object-contain"
+      className="h-6 w-7 object-contain"
     />
   )
 }
@@ -218,42 +225,45 @@ export default function MineradorDetalhe() {
 
   return (
     <div>
-      {/* Busca */}
-      <div ref={searchRef} className="relative max-w-md">
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => {
-            setSearchQuery(e.target.value)
-            setSearchOpen(true)
-          }}
-          onFocus={() => setSearchOpen(true)}
-          placeholder="Buscar outro minerador..."
-          className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        />
-        {searchOpen && searchMatches.length > 0 && (
-          <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-md border border-slate-700 bg-slate-800 shadow-lg">
-            {searchMatches.map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => {
-                  navigate(`/mineradores/${m.slug}`)
-                  setSearchQuery('')
-                  setSearchOpen(false)
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-700 hover:text-white"
-              >
-                {m.image && <img src={m.image} alt="" className="h-6 w-6 shrink-0 object-contain" />}
-                <span>{m.name}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
         <div className="space-y-4">
+          {/* Busca -- só acima da coluna esquerda, mesma largura dela, lado
+              a lado com o aviso da coluna direita (igual à referência) */}
+          <div ref={searchRef} className="relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value)
+                setSearchOpen(true)
+              }}
+              onFocus={() => setSearchOpen(true)}
+              placeholder="Buscar outro minerador..."
+              className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            {searchOpen && searchMatches.length > 0 && (
+              <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-md border border-slate-700 bg-slate-800 shadow-lg">
+                {searchMatches.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => {
+                      navigate(`/mineradores/${m.slug}`)
+                      setSearchQuery('')
+                      setSearchOpen(false)
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-700 hover:text-white"
+                  >
+                    {m.image && (
+                      <img src={m.image} alt="" className="h-6 w-6 shrink-0 object-contain" />
+                    )}
+                    <span>{m.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Nível da Forja */}
           <Card title="Nível da Forja">
             <select
@@ -274,15 +284,20 @@ export default function MineradorDetalhe() {
               igual à referência */}
           <Card title={miner.name}>
             <div className="flex flex-col items-center gap-2">
-              {miner.image ? (
-                <img
-                  src={miner.image}
-                  alt={miner.name}
-                  className="h-32 w-32 object-contain"
-                />
-              ) : (
-                <div className="flex h-32 w-32 items-center justify-center text-slate-600">?</div>
-              )}
+              <div className="relative h-32 w-32">
+                <div className="absolute right-0 top-0 z-10 flex gap-1">
+                  <MinerStatusIcons sellable={miner.sellable} mergeable={miner.mergeable} />
+                </div>
+                {miner.image ? (
+                  <img
+                    src={miner.image}
+                    alt={miner.name}
+                    className="h-32 w-32 object-contain"
+                  />
+                ) : (
+                  <div className="flex h-32 w-32 items-center justify-center text-slate-600">?</div>
+                )}
+              </div>
               <span className="text-sm text-slate-400">Células: {miner.cells}</span>
             </div>
 
@@ -426,7 +441,7 @@ export default function MineradorDetalhe() {
                       <tr
                         key={row.merge.mergeId}
                         onClick={() => setSelectedIndex(i)}
-                        style={{ backgroundColor: levelColorWithAlpha(row.merge.level, '33') }}
+                        style={{ backgroundColor: levelColorWithAlpha(row.merge.level, '73') }}
                         className={`cursor-pointer border-b border-slate-950/40 ${
                           i === selectedIndex ? 'ring-2 ring-inset ring-white/70' : ''
                         }`}
@@ -449,7 +464,10 @@ export default function MineradorDetalhe() {
                         <td className="py-2 pr-3 font-semibold text-white">
                           {formatRLT(row.finalCost)} RLT
                         </td>
-                        <td className="py-2 pr-3 font-semibold text-white">
+                        <td
+                          className="py-2 pr-3 font-semibold text-white"
+                          style={{ backgroundColor: `${getRatioColor(row.ratioPower)}A0` }}
+                        >
                           {formatRLT(row.ratioPower)} RLT
                         </td>
                       </tr>

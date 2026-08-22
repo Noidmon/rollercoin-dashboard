@@ -22,9 +22,18 @@ export interface ParsedPartPrice {
 const MARKDOWN_LINK_LINE_PATTERN = /^\[(.*)\]\(.*\)$/
 const PRICE_PATTERN = /^([\d.]+)\s*RLT$/i
 
+// \s no JS já cobre espaço não-quebrável (U+00A0), que vem junto às vezes
+// quando o texto é copiado de uma página web -- sem essa normalização,
+// "Epic Fan" (visualmente idêntico a "Epic Fan") não bate com a chave
+// gerada por partPriceKey() na hora de buscar o preço, e o preço colado
+// silenciosamente nunca é aplicado.
+export function normalizePartName(name: string): string {
+  return name.replace(/\s+/g, ' ').trim()
+}
+
 function extractLineValue(line: string): string {
   const match = line.match(MARKDOWN_LINK_LINE_PATTERN)
-  return (match ? match[1] : line).trim()
+  return normalizePartName(match ? match[1] : line)
 }
 
 export function parseMarketplacePaste(raw: string): ParsedPartPrice[] {

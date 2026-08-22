@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import SortDropdown, { type SortDropdownOption } from '../components/SortDropdown'
 import { getEffectiveBonus, getEffectivePower } from '../utils/minerPower'
-import { resolveAssetUrl } from '../utils/resolveAssetUrl'
+import MinerStatusIcons from '../components/MinerStatusIcons'
 import type { MinersData } from '../types/miner'
 
 const PAGE_SIZE = 24
@@ -17,17 +17,6 @@ const SORT_OPTIONS: SortDropdownOption<SortOption>[] = [
   { value: 'bonus_desc', label: 'BÔNUS ↓' },
   { value: 'bonus_asc', label: 'BÔNUS ↑' },
 ]
-
-function StatusIcon({ imagePath, label }: { imagePath: string; label: string }) {
-  return (
-    <img
-      src={resolveAssetUrl(imagePath)}
-      alt={label}
-      title={label}
-      className="h-5 w-5 shrink-0"
-    />
-  )
-}
 
 export default function Mineradores() {
   const [data, setData] = useState<MinersData | null>(null)
@@ -186,15 +175,7 @@ export default function Mineradores() {
             className="group relative overflow-hidden rounded-lg border border-slate-500 bg-slate-900 transition-colors hover:border-indigo-500"
           >
             <div className="absolute left-2 top-2 z-10 flex gap-1">
-              {miner.sellable === false && (
-                <StatusIcon
-                  imagePath="rollercoin/icons/sellable_disabled.webp"
-                  label="Não vendável"
-                />
-              )}
-              {miner.mergeable === true && (
-                <StatusIcon imagePath="rollercoin/icons/merge_enabled.webp" label="Mergeável" />
-              )}
+              <MinerStatusIcons sellable={miner.sellable} mergeable={miner.mergeable} />
             </div>
 
             <div className="flex h-32 items-center justify-center bg-slate-800 p-2">
