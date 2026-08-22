@@ -297,12 +297,14 @@ function EventosContent({ event }: { event: EventData }) {
                 <select
                   value={multiplier}
                   onChange={(e) => setMultiplier(Number(e.target.value))}
-                  className={`w-full rounded-md border border-slate-700 bg-slate-800 px-2 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-                    multiplier === recommendation.recommended ? 'text-emerald-400' : 'text-white'
-                  }`}
+                  className="w-full rounded-md border border-slate-700 bg-slate-800 px-2 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 >
                   {multiplierOptions.map((m) => (
-                    <option key={m} value={m}>
+                    <option
+                      key={m}
+                      value={m}
+                      style={{ color: m === recommendation.recommended ? '#34d399' : undefined }}
+                    >
                       {m}x
                     </option>
                   ))}
