@@ -1,9 +1,15 @@
+export type RewardType = 'money' | 'miner' | 'power_temp' | 'other'
+
 export interface EventReward {
   level: number
   totalPoints: number
   pointsForLevel: number
   rewardName: string
   rewardValue: string
+  rewardType: RewardType
+  amount?: number
+  currency?: 'RST' | 'RLT'
+  powerGhS?: number
 }
 
 export interface ParsedEvent {
@@ -49,6 +55,8 @@ function toNumber(raw: string): number {
 
 const POINTS_LINE = /^([\d.,]+)\s*\/\s*([\d.,]+)\s*Points$/i
 const REWARD_IMG_LINE = /^(?:\d+)?reward img$/i
+const MONEY_VALUE = /^([\d.,]+)\s*(RST|RLT)$/i
+const POWER_TEMP_VALUE = /^(.*Gh\/s)\s*\((\d+)d\)$/i
 const POWER_BONUS_VALUE = /^(.*Gh\/s)([\d.,]+)%?$/
 
 // Reconstrói "220.000 Gh/s0" -> "220.000 Gh/s (+0%)"; texto livre ("Battery x3")
@@ -60,6 +68,42 @@ function formatRewardValue(raw: string): string {
   const power = match[1].trim()
   const bonus = match[2]
   return `${power} (+${bonus}%)`
+}
+
+function extractPowerGhS(power: string): number {
+  return toNumber(power.replace(/Gh\/s/i, '').trim())
+}
+
+interface RewardClassification {
+  rewardType: RewardType
+  amount?: number
+  currency?: 'RST' | 'RLT'
+  powerGhS?: number
+}
+
+function classifyReward(raw: string): RewardClassification {
+  const trimmed = raw.trim()
+
+  const moneyMatch = trimmed.match(MONEY_VALUE)
+  if (moneyMatch) {
+    return {
+      rewardType: 'money',
+      amount: toNumber(moneyMatch[1]),
+      currency: moneyMatch[2].toUpperCase() as 'RST' | 'RLT',
+    }
+  }
+
+  const tempMatch = trimmed.match(POWER_TEMP_VALUE)
+  if (tempMatch) {
+    return { rewardType: 'power_temp', powerGhS: extractPowerGhS(tempMatch[1]) }
+  }
+
+  const minerMatch = trimmed.match(POWER_BONUS_VALUE)
+  if (minerMatch) {
+    return { rewardType: 'miner', powerGhS: extractPowerGhS(minerMatch[1]) }
+  }
+
+  return { rewardType: 'other' }
 }
 
 export function parseEventText(text: string): ParsedEvent {
@@ -113,6 +157,8 @@ export function parseEventText(text: string): ParsedEvent {
     const rawValue = lines[i + 3]
     if (!rewardName || !rawValue) continue
 
+    const classification = classifyReward(rawValue)
+
     rewards.push({
       level,
       // O texto colado não traz pontos por nível dentro do bloco de recompensa em
@@ -123,6 +169,7 @@ export function parseEventText(text: string): ParsedEvent {
       pointsForLevel: pointsNeededForLevel ?? 0,
       rewardName,
       rewardValue: formatRewardValue(rawValue),
+      ...classification,
     })
 
     i += 3

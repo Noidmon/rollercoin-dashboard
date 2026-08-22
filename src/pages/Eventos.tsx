@@ -1,8 +1,19 @@
 import { useState } from 'react'
 import { parseEventText, type ParsedEvent } from '../utils/parseEventData'
+import {
+  calculateEventTotalValue,
+  calculateRecommendedMultiplier,
+  type EventDifficulty,
+} from '../utils/calculateEventProfitability'
 import Card from '../components/Card'
 
 const STORAGE_KEY = 'rollercoin-dashboard:event'
+
+function scoreColorClass(score: number): string {
+  if (score < 4) return 'text-red-400'
+  if (score <= 7) return 'text-yellow-400'
+  return 'text-emerald-400'
+}
 
 function loadStoredEvent(): ParsedEvent | null {
   try {
@@ -17,6 +28,9 @@ export default function Eventos() {
   const [rawInput, setRawInput] = useState('')
   const [event, setEvent] = useState<ParsedEvent | null>(loadStoredEvent)
   const [parseError, setParseError] = useState<string | null>(null)
+
+  const [baseMultiplier, setBaseMultiplier] = useState(1)
+  const [maxMultiplier, setMaxMultiplier] = useState(1000)
 
   function handleImport() {
     setParseError(null)
@@ -35,6 +49,11 @@ export default function Eventos() {
     event?.currentPoints != null && event?.pointsNeededForLevel
       ? Math.min((event.currentPoints / event.pointsNeededForLevel) * 100, 100)
       : null
+
+  const totalValue = event ? calculateEventTotalValue(event.rewards) : 0
+  const difficulty: EventDifficulty = { baseMultiplier, maxMultiplier }
+  const recommendation =
+    event && totalValue > 0 ? calculateRecommendedMultiplier(totalValue, difficulty) : null
 
   return (
     <div>
@@ -109,6 +128,80 @@ export default function Eventos() {
                     />
                   </div>
                 </div>
+              )}
+            </Card>
+
+            <Card title="Dificuldade do Evento">
+              <p className="text-xs text-slate-500">
+                Esses dois valores não vêm no texto colado — digite manualmente a
+                partir do painel de multiplicador do jogo.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-6">
+                <div>
+                  <label className="mb-1 block text-xs text-slate-400">
+                    Multiplicador base (por RLT)
+                  </label>
+                  <input
+                    type="number"
+                    value={baseMultiplier}
+                    onChange={(e) => setBaseMultiplier(Number(e.target.value))}
+                    className="w-32 rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-slate-400">
+                    Multiplicador máximo
+                  </label>
+                  <input
+                    type="number"
+                    value={maxMultiplier}
+                    onChange={(e) => setMaxMultiplier(Number(e.target.value))}
+                    className="w-32 rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+            </Card>
+
+            <Card title="Recomendação">
+              <p className="text-xs text-slate-500">
+                Fórmula reimplementada por conta própria a partir de comportamento
+                observado publicamente, só para cálculo pessoal — não é código de
+                terceiros.
+              </p>
+              {recommendation ? (
+                <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <div>
+                    <p className="text-xs text-slate-400">Multiplicador Recomendado</p>
+                    <p className="text-lg font-semibold text-indigo-300">
+                      {recommendation.recommended}x
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400">RLT a Comprar</p>
+                    <p className="text-lg font-semibold text-slate-200">
+                      {recommendation.rltToBuy.toLocaleString('en-US')}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400">Ratio</p>
+                    <p className="text-lg font-semibold text-slate-200">
+                      {recommendation.ratio.toFixed(2)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400">Nota</p>
+                    <p
+                      className={`text-lg font-semibold ${scoreColorClass(recommendation.score)}`}
+                    >
+                      {recommendation.score.toFixed(1)}/10
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-slate-400">
+                  Nenhuma recompensa em RLT/RST ou de minerador foi encontrada nesse
+                  evento — sem valor total pra calcular uma recomendação.
+                </p>
               )}
             </Card>
 
