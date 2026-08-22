@@ -358,7 +358,6 @@ function EventosContent({ event }: { event: EventData }) {
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="sticky top-0 border-b border-slate-800 bg-slate-900 text-xs uppercase text-slate-400">
-                    <th className="py-2 pr-3 font-medium"></th>
                     <th className="py-2 pr-3 font-medium">Nível</th>
                     <th className="py-2 pr-3 font-medium">Total</th>
                     <th className="py-2 pr-3 font-medium">Pontos</th>
@@ -396,14 +395,6 @@ function EventosContent({ event }: { event: EventData }) {
 
                     return (
                       <tr key={reward.reward_id} className="border-b border-slate-800/60">
-                        <td className="py-2 pr-3">
-                          <RewardImage
-                            imagePath={reward.image_path}
-                            name={reward.name}
-                            mergeLevel={mergeLevel}
-                            sellable={reward.sellable}
-                          />
-                        </td>
                         <td className="py-2 pr-3 text-slate-300">
                           {reward.required_level}
                         </td>
@@ -413,7 +404,17 @@ function EventosContent({ event }: { event: EventData }) {
                         <td className="py-2 pr-3 text-slate-300">
                           {reward.level_xp.toLocaleString('en-US')}
                         </td>
-                        <td className="py-2 pr-3 text-slate-200">{reward.name}</td>
+                        <td className="py-2 pr-3 text-slate-200">
+                          <div className="flex items-center gap-2">
+                            <RewardImage
+                              imagePath={reward.image_path}
+                              name={reward.name}
+                              mergeLevel={mergeLevel}
+                              sellable={reward.sellable}
+                            />
+                            <span>{reward.name}</span>
+                          </div>
+                        </td>
                         <td className="py-2 pr-3 text-slate-200">{reward.value_text}</td>
                         <td className="py-2 pr-3 text-slate-300">{boxes ?? '--'}</td>
                         <td className="py-2 pr-3 text-slate-300">{marketRlt ?? '--'}</td>
