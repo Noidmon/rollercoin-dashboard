@@ -1,0 +1,27 @@
+{
+  "common": {
+    "fan": 0.0315,
+    "wire": 0.04095,
+    "hashboard": 0.021
+  },
+  "uncommon": {
+    "fan": 0.0105,
+    "wire": 0.011445,
+    "hashboard": 0.01029
+  },
+  "rare": {
+    "fan": 0.2079,
+    "wire": 0.2205,
+    "hashboard": 0.1764
+  },
+  "epic": {
+    "fan": 2.31,
+    "wire": 1.8585,
+    "hashboard": 2.1
+  },
+  "legendary": {
+    "fan": 2.604,
+    "wire": 7.5474,
+    "hashboard": 9.2715
+  }
+}
