@@ -144,23 +144,23 @@ export default function Mineradores() {
     <div>
       <h1 className="text-2xl font-semibold text-white">Mineradores</h1>
 
-      <div className="mt-4 flex flex-wrap items-center gap-4">
+      <div className="mx-auto mt-4 flex max-w-4xl flex-wrap items-center justify-center gap-4">
         <input
           type="text"
           value={search}
           onChange={(e) => handleSearchChange(e.target.value)}
           placeholder="Buscar mineradores..."
-          className="min-w-[240px] flex-1 rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="w-full min-w-[240px] flex-1 rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 sm:w-auto"
         />
 
         <div className="flex gap-3">
-          <div className="rounded-md border border-slate-600 bg-slate-900 px-4 py-2 text-center">
+          <div className="rounded-md border border-slate-500 bg-slate-900 px-4 py-2 text-center">
             <div className="text-xs uppercase tracking-wide text-slate-400">Mineradores</div>
             <div className="text-lg font-semibold text-white">
               {data.total.toLocaleString('en-US')}
             </div>
           </div>
-          <div className="rounded-md border border-slate-600 bg-slate-900 px-4 py-2 text-center">
+          <div className="rounded-md border border-slate-500 bg-slate-900 px-4 py-2 text-center">
             <div className="text-xs uppercase tracking-wide text-slate-400">Merges</div>
             <div className="text-lg font-semibold text-white">
               {data.totalMerges.toLocaleString('en-US')}
@@ -176,7 +176,7 @@ export default function Mineradores() {
           <Link
             key={miner.id}
             to={`/mineradores/${miner.slug}`}
-            className="group relative overflow-hidden rounded-lg border border-slate-600 bg-slate-900 transition-colors hover:border-indigo-500"
+            className="group relative overflow-hidden rounded-lg border border-slate-500 bg-slate-900 transition-colors hover:border-indigo-500"
           >
             <div className="absolute left-2 top-2 z-10 flex gap-1">
               {miner.sellable === false && (
@@ -190,7 +190,7 @@ export default function Mineradores() {
               )}
             </div>
 
-            <div className="flex aspect-square items-center justify-center bg-slate-800 p-4">
+            <div className="flex h-32 items-center justify-center bg-slate-800 p-2">
               {miner.image ? (
                 <img
                   src={miner.image}
