@@ -1,4 +1,5 @@
 import type { EventData } from '../types/event'
+import { resolveAssetUrl } from './resolveAssetUrl'
 
 const REQUIRED_FIELDS = ['name', 'rewards', 'tasks', 'multiplier_exchange_rlt'] as const
 
@@ -15,7 +16,7 @@ export function parseEventJson(raw: string): EventData {
 }
 
 export function getRewardImageUrl(imagePath: string): string {
-  return `https://api.minaryganar.com/assets/${imagePath}`
+  return resolveAssetUrl(imagePath)
 }
 
 // reward_summary é dado pessoal do jogador que gerou o JSON — nunca deve ser
