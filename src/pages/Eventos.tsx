@@ -91,7 +91,7 @@ export default function Eventos() {
     <div>
       <h1 className="text-2xl font-semibold text-white">Eventos</h1>
 
-      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
+      <div className="mt-4 grid grid-cols-1 items-stretch gap-4 lg:grid-cols-[320px_1fr] lg:h-[calc(100vh-140px)]">
         <div className="space-y-4 lg:sticky lg:top-8 lg:h-fit">
           {event.cover_image_path && (
             <img
@@ -199,7 +199,7 @@ export default function Eventos() {
           </Card>
         </div>
 
-        <div className="space-y-4">
+        <div className="flex h-full flex-col gap-4">
           <Card title="Calculadora de Recompensas">
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
               <div>
@@ -259,8 +259,12 @@ export default function Eventos() {
             </div>
           </Card>
 
-          <Card title="Recompensas">
-            <div className="max-h-[75vh] overflow-y-auto">
+          <Card
+            title="Recompensas"
+            className="flex flex-1 flex-col min-h-0"
+            contentClassName="flex flex-1 flex-col min-h-0"
+          >
+            <div className="flex-1 min-h-0 overflow-y-auto">
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="sticky top-0 border-b border-slate-800 bg-slate-900 text-xs uppercase text-slate-400">
