@@ -33,6 +33,7 @@ const FIXED_UI_ASSETS = [
   'rollercoin/levels/level_5.webp',
   'rollercoin/levels/level_6.webp',
   'rollercoin/icons/sellable_disabled.webp',
+  'rollercoin/icons/merge_enabled.webp',
 ]
 
 const MANIFEST_HEADER = `// Mapeia image_path (caminho relativo, ex: "rollercoin/items/bonus_power_3.webp")

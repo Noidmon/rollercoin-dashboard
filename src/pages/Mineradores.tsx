@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import SortDropdown, { type SortDropdownOption } from '../components/SortDropdown'
 import { getEffectiveBonus, getEffectivePower } from '../utils/minerPower'
+import { resolveAssetUrl } from '../utils/resolveAssetUrl'
 import type { MinersData } from '../types/miner'
 
 const PAGE_SIZE = 24
@@ -17,16 +18,14 @@ const SORT_OPTIONS: SortDropdownOption<SortOption>[] = [
   { value: 'bonus_asc', label: 'BÔNUS ↑' },
 ]
 
-function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
+function StatusIcon({ imagePath, label }: { imagePath: string; label: string }) {
   return (
-    <span
+    <img
+      src={resolveAssetUrl(imagePath)}
+      alt={label}
       title={label}
-      className={`flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold text-white ${
-        ok ? 'bg-emerald-500/90' : 'bg-red-500/90'
-      }`}
-    >
-      {ok ? '✓' : '✕'}
-    </span>
+      className="h-5 w-5 shrink-0"
+    />
   )
 }
 
@@ -180,8 +179,15 @@ export default function Mineradores() {
             className="group relative overflow-hidden rounded-lg border border-slate-600 bg-slate-900 transition-colors hover:border-indigo-500"
           >
             <div className="absolute left-2 top-2 z-10 flex gap-1">
-              <StatusBadge ok={miner.sellable} label={miner.sellable ? 'Vendável' : 'Não vendável'} />
-              <StatusBadge ok={miner.mergeable} label={miner.mergeable ? 'Mergeável' : 'Não mergeável'} />
+              {miner.sellable === false && (
+                <StatusIcon
+                  imagePath="rollercoin/icons/sellable_disabled.webp"
+                  label="Não vendável"
+                />
+              )}
+              {miner.mergeable === true && (
+                <StatusIcon imagePath="rollercoin/icons/merge_enabled.webp" label="Mergeável" />
+              )}
             </div>
 
             <div className="flex aspect-square items-center justify-center bg-slate-800 p-4">

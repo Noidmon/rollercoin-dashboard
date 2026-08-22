@@ -8,6 +8,7 @@ export const ASSET_MANIFEST: Record<string, string> = {
   "rollercoin/events/progression-event/bronze-iii-progression/bronze-iii-progression_image.webp": "/rc-icons/bronze-iii-progression_image.webp",
   "rollercoin/events/progression-event/road-to-five-stars/road-to-five-stars_event.webp": "/rc-icons/road-to-five-stars_event.webp",
   "rollercoin/events/progression-event/road-to-five-stars/road-to-five-stars_image.webp": "/rc-icons/road-to-five-stars_image.webp",
+  "rollercoin/icons/merge_enabled.webp": "/rc-icons/merge_enabled.webp",
   "rollercoin/icons/sellable_disabled.webp": "/rc-icons/sellable_disabled.webp",
   "rollercoin/items/12h_booster.gif": "/rc-icons/12h_booster.gif",
   "rollercoin/items/3h_booster.gif": "/rc-icons/3h_booster.gif",
