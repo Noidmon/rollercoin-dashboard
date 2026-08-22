@@ -93,20 +93,30 @@ export default function Mineradores() {
       case 'antigos':
         return [...filteredMiners].reverse()
       case 'poder_desc':
+        // empate no poder desempata pelo bônus, na mesma direção (desc)
         return [...filteredMiners].sort(
-          (a, b) => Number(getEffectivePower(b)) - Number(getEffectivePower(a)),
+          (a, b) =>
+            Number(getEffectivePower(b)) - Number(getEffectivePower(a)) ||
+            Number(getEffectiveBonus(b)) - Number(getEffectiveBonus(a)),
         )
       case 'poder_asc':
         return [...filteredMiners].sort(
-          (a, b) => Number(getEffectivePower(a)) - Number(getEffectivePower(b)),
+          (a, b) =>
+            Number(getEffectivePower(a)) - Number(getEffectivePower(b)) ||
+            Number(getEffectiveBonus(a)) - Number(getEffectiveBonus(b)),
         )
       case 'bonus_desc':
+        // empate no bônus desempata pelo poder, na mesma direção (desc)
         return [...filteredMiners].sort(
-          (a, b) => Number(getEffectiveBonus(b)) - Number(getEffectiveBonus(a)),
+          (a, b) =>
+            Number(getEffectiveBonus(b)) - Number(getEffectiveBonus(a)) ||
+            Number(getEffectivePower(b)) - Number(getEffectivePower(a)),
         )
       case 'bonus_asc':
         return [...filteredMiners].sort(
-          (a, b) => Number(getEffectiveBonus(a)) - Number(getEffectiveBonus(b)),
+          (a, b) =>
+            Number(getEffectiveBonus(a)) - Number(getEffectiveBonus(b)) ||
+            Number(getEffectivePower(a)) - Number(getEffectivePower(b)),
         )
       case 'recentes':
       default:
