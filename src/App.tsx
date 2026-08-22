@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard'
 import Calculadora from './pages/Calculadora'
 import Merges from './pages/Merges'
 import Mineradores from './pages/Mineradores'
+import MineradorDetalhe from './pages/MineradorDetalhe'
 import Hamsters from './pages/Hamsters'
 import Eventos from './pages/Eventos'
 import Simulador from './pages/Simulador'
@@ -23,6 +24,7 @@ function App() {
             <Route path="/calculadora" element={<Calculadora />} />
             <Route path="/merges" element={<Merges />} />
             <Route path="/mineradores" element={<Mineradores />} />
+            <Route path="/mineradores/:slug" element={<MineradorDetalhe />} />
             <Route path="/hamsters" element={<Hamsters />} />
             <Route path="/eventos" element={<Eventos />} />
             <Route path="/simulador" element={<Simulador />} />

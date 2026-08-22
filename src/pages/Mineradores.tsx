@@ -1,28 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import SortDropdown, { type SortDropdownOption } from '../components/SortDropdown'
-import { getEffectiveBonus, getEffectivePower, type MinerMerge } from '../utils/minerPower'
-
-interface Miner {
-  id: string
-  name: string
-  slug: string
-  sellable: boolean
-  mergeable: boolean
-  power: number
-  bonus: number
-  cells: number
-  image: string | null
-  marketplaceUrl: string
-  merges: MinerMerge[]
-}
-
-interface MinersData {
-  generatedAt: string
-  total: number
-  totalMerges: number
-  miners: Miner[]
-}
+import { getEffectiveBonus, getEffectivePower } from '../utils/minerPower'
+import type { MinersData } from '../types/miner'
 
 const PAGE_SIZE = 24
 

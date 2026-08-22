@@ -1,18 +1,6 @@
-export interface MinerMerge {
-  mergeId: string
-  level: number
-  power: number
-  bonus: number
-  mergeFee: number
-  requiredPreviousCount: number
-  fanCount: number
-  fanLevel: number
-  hashboardCount: number
-  hashboardLevel: number
-  wireCount: number
-  wireLevel: number
-  requirements: unknown[]
-}
+import type { MinerMerge } from '../types/miner'
+
+export type { MinerMerge }
 
 export interface MinerWithMerges {
   mergeable: boolean
