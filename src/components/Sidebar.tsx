@@ -15,7 +15,7 @@ export default function Sidebar() {
   const { nickname, setNickname, loading, error, refetch } = usePlayer()
 
   return (
-    <aside className="flex h-screen w-60 shrink-0 flex-col border-r border-slate-800 bg-slate-900">
+    <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col overflow-y-auto border-r border-slate-800 bg-slate-900">
       <div className="px-6 py-5">
         <span className="text-lg font-semibold text-white">RollerCoin</span>
         <span className="block text-xs text-slate-400">Dashboard</span>

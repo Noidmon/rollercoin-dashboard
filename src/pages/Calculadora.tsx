@@ -5,19 +5,58 @@ import {
   parseNetworkDistribution,
   parseNetworkDistributionText,
 } from '../utils/parseNetworkDistribution'
-import { calculateCoinEarnings, type CoinNetworkData } from '../utils/calculateEarnings'
-import { isWithdrawable } from '../data/withdrawable'
+import { calculateCoinEarnings, type CoinNetworkData, type CoinEarnings } from '../utils/calculateEarnings'
+import { BLOCK_TIME_SECONDS } from '../data/blockTimes'
+import { getLeagueInfo } from '../data/leagues'
 import Card from '../components/Card'
 
-const NO_MARKET_PRICE_SYMBOLS = ['RLT', 'RST', 'HMT']
 const GHS_PER_EHS = 1_000_000_000
 
+type DisplayMode = 'usd' | 'crypto'
+type SortColumn = 'percentNetwork' | 'daily' | 'weekly' | 'monthly'
 type SortDirection = 'asc' | 'desc'
-type SortColumn = 'dailyGainUSD' | 'weeklyGainUSD' | 'monthlyGainUSD'
 
-function formatCoinAmount(value: number): string {
-  return value.toLocaleString('en-US', { maximumFractionDigits: 8 })
+interface CoinRow extends CoinEarnings {
+  percentNetwork: number | null
 }
+
+function formatUSD(value: number | null): string {
+  return value !== null && Number.isFinite(value)
+    ? `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : '--'
+}
+
+function formatCoinAmount(value: number | null): string {
+  return value !== null && Number.isFinite(value)
+    ? value.toLocaleString('en-US', { maximumFractionDigits: 8 })
+    : '--'
+}
+
+function formatPercent(value: number | null): string {
+  return value !== null && Number.isFinite(value) ? `${value.toFixed(4)}%` : '--'
+}
+
+function formatBlockTime(seconds: number): string {
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = seconds % 60
+  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`
+}
+
+function valueFor(row: CoinRow, column: SortColumn, mode: DisplayMode): number {
+  if (column === 'percentNetwork') return row.percentNetwork ?? -Infinity
+  if (mode === 'usd') {
+    if (column === 'daily') return row.dailyGainUSD ?? -Infinity
+    if (column === 'weekly') return row.weeklyGainUSD ?? -Infinity
+    return row.monthlyGainUSD ?? -Infinity
+  }
+  if (column === 'daily') return row.dailyGain ?? -Infinity
+  if (column === 'weekly') return row.weeklyGain ?? -Infinity
+  return row.monthlyGain ?? -Infinity
+}
+
+const BLOCK_DURATIONS = Object.entries(BLOCK_TIME_SECONDS)
+  .map(([symbol, seconds]) => ({ symbol, seconds }))
+  .sort((a, b) => a.seconds - b.seconds)
 
 export default function Calculadora() {
   const { playerData } = usePlayer()
@@ -30,10 +69,10 @@ export default function Calculadora() {
   const [networkData, setNetworkData] = useState<CoinNetworkData[] | null>(null)
   const [parseError, setParseError] = useState<string | null>(null)
 
-  const [sortColumn, setSortColumn] = useState<SortColumn>('dailyGainUSD')
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
-
   const [customPowerEhs, setCustomPowerEhs] = useState<number | null>(null)
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('usd')
+  const [sortColumn, setSortColumn] = useState<SortColumn>('daily')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
 
   useEffect(() => {
     getCryptoPrices(Object.values(COIN_SYMBOL_TO_COINGECKO_ID))
@@ -84,19 +123,6 @@ export default function Calculadora() {
     return prices[coingeckoId] ?? null
   }
 
-  const rows =
-    networkData && playerData && customPowerEhs !== null
-      ? networkData
-          .map((coin) =>
-            calculateCoinEarnings(coin, customPowerEhs * GHS_PER_EHS, priceFor(coin.symbol)),
-          )
-          .sort((a, b) => {
-            const av = a[sortColumn] ?? -Infinity
-            const bv = b[sortColumn] ?? -Infinity
-            return sortDirection === 'desc' ? bv - av : av - bv
-          })
-      : []
-
   function handleSort(column: SortColumn) {
     if (column === sortColumn) {
       setSortDirection((prev) => (prev === 'desc' ? 'asc' : 'desc'))
@@ -106,59 +132,203 @@ export default function Calculadora() {
     }
   }
 
+  const customPowerGhs = customPowerEhs !== null ? customPowerEhs * GHS_PER_EHS : null
+
+  const rows: CoinRow[] =
+    networkData && customPowerGhs !== null
+      ? networkData
+          .map((coin) => {
+            const earnings = calculateCoinEarnings(coin, customPowerGhs, priceFor(coin.symbol))
+            const percentNetwork =
+              coin.networkPower !== null && coin.networkPower !== 0
+                ? (customPowerGhs / coin.networkPower) * 100
+                : null
+            return { ...earnings, percentNetwork }
+          })
+          .sort((a, b) => {
+            const av = valueFor(a, sortColumn, displayMode)
+            const bv = valueFor(b, sortColumn, displayMode)
+            return sortDirection === 'desc' ? bv - av : av - bv
+          })
+      : []
+
+  const leagueInfo = playerData ? getLeagueInfo(playerData.max_power) : null
+
   return (
     <div>
       <h1 className="text-2xl font-semibold text-white">Calculadora</h1>
 
       <div className="mt-4 space-y-4">
-        <Card title="Preços de Cripto (USD)">
-          {pricesLoading && <p className="text-sm text-slate-400">Carregando preços...</p>}
-          {pricesError && <p className="text-sm text-red-400">Erro: {pricesError}</p>}
-          {!pricesLoading && !pricesError && (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
-              {Object.keys(COIN_SYMBOL_TO_COINGECKO_ID).map((symbol) => {
-                const price = priceFor(symbol)
-                return (
-                  <div key={symbol}>
-                    <p className="text-xs text-slate-400">{symbol}</p>
-                    <p className="text-sm text-slate-200">
-                      {price !== null ? `$${price.toLocaleString('en-US')}` : '--'}
-                    </p>
-                  </div>
-                )
-              })}
-              {NO_MARKET_PRICE_SYMBOLS.map((symbol) => (
-                <div key={symbol}>
-                  <p className="text-xs text-slate-400">{symbol}</p>
-                  <p className="text-sm text-slate-500">--</p>
+        <Card title="Poder e Preferências">
+          <div className="flex flex-wrap items-end gap-6">
+            <div>
+              <label className="mb-1 block text-xs text-slate-400">Seu Poder (EH/s)</label>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  value={customPowerEhs ?? 0}
+                  onChange={(e) => setCustomPowerEhs(Number(e.target.value))}
+                  className="w-36 rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                {playerData && (
+                  <button
+                    onClick={() => setCustomPowerEhs(playerData.current_power / GHS_PER_EHS)}
+                    className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800"
+                  >
+                    Usar meu poder atual
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {leagueInfo && (
+              <div>
+                <p className="text-xs text-slate-400">Sua Liga</p>
+                <p className="text-lg font-semibold text-indigo-300">
+                  {leagueInfo.currentLeague.name}
+                </p>
+              </div>
+            )}
+
+            <div>
+              <p className="mb-1 text-xs text-slate-400">Exibir em</p>
+              <div className="flex overflow-hidden rounded-md border border-slate-700">
+                <button
+                  onClick={() => setDisplayMode('usd')}
+                  className={`px-3 py-1.5 text-sm font-medium ${
+                    displayMode === 'usd'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  USD
+                </button>
+                <button
+                  onClick={() => setDisplayMode('crypto')}
+                  className={`px-3 py-1.5 text-sm font-medium ${
+                    displayMode === 'crypto'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  Cripto
+                </button>
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[0.7fr_2.6fr_0.7fr]">
+          <Card title="Duração do Bloco">
+            <div className="space-y-2">
+              {BLOCK_DURATIONS.map(({ symbol, seconds }) => (
+                <div key={symbol} className="flex items-center justify-between text-sm">
+                  <span className="text-slate-300">{symbol}</span>
+                  <span className="whitespace-nowrap text-slate-400">
+                    {formatBlockTime(seconds)}
+                  </span>
                 </div>
               ))}
             </div>
-          )}
-        </Card>
-
-        {playerData && (
-          <Card title="Seu Poder (EH/s)">
-            <div className="flex flex-wrap items-end gap-3">
-              <input
-                type="number"
-                value={customPowerEhs ?? 0}
-                onChange={(e) => setCustomPowerEhs(Number(e.target.value))}
-                className="w-40 rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-              <button
-                onClick={() => setCustomPowerEhs(playerData.current_power / GHS_PER_EHS)}
-                className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800"
-              >
-                Resetar para meu poder atual
-              </button>
-            </div>
-            <p className="mt-2 text-xs text-slate-500">
-              Poder atual (com bônus temporário) — pode cair quando o bônus expirar. Edite
-              para testar "e se eu tivesse X de poder?".
-            </p>
           </Card>
-        )}
+
+          <Card title="Ganhos Estimados">
+            {!playerData && (
+              <p className="text-sm text-slate-400">
+                Digite um nickname no menu lateral para calcular seus ganhos estimados.
+              </p>
+            )}
+
+            {playerData && !networkData && (
+              <p className="text-sm text-slate-400">
+                Cole os dados de distribuição da rede abaixo para calcular seus ganhos
+                estimados por moeda.
+              </p>
+            )}
+
+            {playerData && networkData && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-xs uppercase text-slate-400">
+                      <th className="py-2 pr-3 font-medium">Moeda</th>
+                      <th
+                        className="cursor-pointer select-none whitespace-nowrap py-2 pr-3 font-medium"
+                        onClick={() => handleSort('percentNetwork')}
+                      >
+                        % Rede{' '}
+                        {sortColumn === 'percentNetwork' &&
+                          (sortDirection === 'desc' ? '↓' : '↑')}
+                      </th>
+                      <th
+                        className="cursor-pointer select-none whitespace-nowrap py-2 pr-3 font-medium"
+                        onClick={() => handleSort('daily')}
+                      >
+                        Diário {sortColumn === 'daily' && (sortDirection === 'desc' ? '↓' : '↑')}
+                      </th>
+                      <th
+                        className="cursor-pointer select-none whitespace-nowrap py-2 pr-3 font-medium"
+                        onClick={() => handleSort('weekly')}
+                      >
+                        Semanal{' '}
+                        {sortColumn === 'weekly' && (sortDirection === 'desc' ? '↓' : '↑')}
+                      </th>
+                      <th
+                        className="cursor-pointer select-none whitespace-nowrap py-2 pr-3 font-medium"
+                        onClick={() => handleSort('monthly')}
+                      >
+                        Mensal (30d){' '}
+                        {sortColumn === 'monthly' && (sortDirection === 'desc' ? '↓' : '↑')}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row) => (
+                      <tr key={row.symbol} className="border-b border-slate-800/60">
+                        <td className="py-2 pr-3 text-slate-300">{row.name}</td>
+                        <td className="whitespace-nowrap py-2 pr-3 text-slate-300">
+                          {formatPercent(row.percentNetwork)}
+                        </td>
+                        <td className="whitespace-nowrap py-2 pr-3 font-semibold text-emerald-400">
+                          {displayMode === 'usd'
+                            ? formatUSD(row.dailyGainUSD)
+                            : `${formatCoinAmount(row.dailyGain)} ${row.symbol}`}
+                        </td>
+                        <td className="whitespace-nowrap py-2 pr-3 text-slate-300">
+                          {displayMode === 'usd'
+                            ? formatUSD(row.weeklyGainUSD)
+                            : `${formatCoinAmount(row.weeklyGain)} ${row.symbol}`}
+                        </td>
+                        <td className="whitespace-nowrap py-2 pr-3 text-slate-300">
+                          {displayMode === 'usd'
+                            ? formatUSD(row.monthlyGainUSD)
+                            : `${formatCoinAmount(row.monthlyGain)} ${row.symbol}`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+
+          <Card title="Preços">
+            <div className="space-y-2">
+              {Object.keys(COIN_SYMBOL_TO_COINGECKO_ID).map((symbol) => {
+                const price = priceFor(symbol)
+                return (
+                  <div key={symbol} className="flex items-center justify-between text-sm">
+                    <span className="text-slate-300">{symbol}</span>
+                    <span className="whitespace-nowrap text-slate-400">
+                      {pricesLoading ? '...' : formatUSD(price)}
+                    </span>
+                  </div>
+                )
+              })}
+              {pricesError && <p className="text-xs text-red-400">Erro: {pricesError}</p>}
+            </div>
+          </Card>
+        </div>
 
         <Card title="Importar Dados da Rede">
           <p className="text-xs text-slate-500">
@@ -187,110 +357,6 @@ export default function Calculadora() {
             </p>
           )}
         </Card>
-
-        {!playerData && (
-          <p className="text-sm text-slate-400">
-            Digite um nickname no menu lateral para calcular seus ganhos estimados.
-          </p>
-        )}
-
-        {playerData && !networkData && (
-          <p className="text-sm text-slate-400">
-            Cole o JSON de distribuição da rede acima para calcular seus ganhos estimados
-            por moeda.
-          </p>
-        )}
-
-        {playerData && networkData && (
-          <Card title="Ganhos Estimados">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-slate-800 text-xs uppercase text-slate-400">
-                    <th className="py-2 pr-3 font-medium">Moeda</th>
-                    <th className="py-2 pr-3 font-medium">Preço USD</th>
-                    <th className="py-2 pr-3 font-medium">Poder da Rede</th>
-                    <th className="py-2 pr-3 font-medium">Sua Fatia/Bloco</th>
-                    <th className="py-2 pr-3 font-medium">Blocos/dia</th>
-                    <th className="py-2 pr-3 font-medium">Ganho Diário</th>
-                    <th
-                      className="cursor-pointer py-2 pr-3 font-medium select-none"
-                      onClick={() => handleSort('dailyGainUSD')}
-                    >
-                      Ganho Diário (USD){' '}
-                      {sortColumn === 'dailyGainUSD' && (sortDirection === 'desc' ? '↓' : '↑')}
-                    </th>
-                    <th
-                      className="cursor-pointer py-2 pr-3 font-medium select-none"
-                      onClick={() => handleSort('weeklyGainUSD')}
-                    >
-                      Ganho Semanal (USD){' '}
-                      {sortColumn === 'weeklyGainUSD' && (sortDirection === 'desc' ? '↓' : '↑')}
-                    </th>
-                    <th
-                      className="cursor-pointer py-2 pr-3 font-medium select-none"
-                      onClick={() => handleSort('monthlyGainUSD')}
-                    >
-                      Ganho Mensal (USD){' '}
-                      {sortColumn === 'monthlyGainUSD' && (sortDirection === 'desc' ? '↓' : '↑')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row) => (
-                    <tr key={row.symbol} className="border-b border-slate-800/60">
-                      <td className="py-2 pr-3 text-slate-300">
-                        {row.name}
-                        {!isWithdrawable(row.symbol) && (
-                          <span className="ml-1 text-xs text-slate-500" title="Não sacável">
-                            *
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2 pr-3 text-slate-300">
-                        {row.priceUSD !== null
-                          ? `$${row.priceUSD.toLocaleString('en-US')}`
-                          : '--'}
-                      </td>
-                      <td className="py-2 pr-3 text-slate-300">
-                        {row.networkPower !== null
-                          ? formatCoinAmount(row.networkPower)
-                          : '--'}
-                      </td>
-                      <td className="py-2 pr-3 text-slate-300">
-                        {row.yourSharePerBlock !== null
-                          ? formatCoinAmount(row.yourSharePerBlock)
-                          : '--'}
-                      </td>
-                      <td className="py-2 pr-3 text-slate-300">
-                        {row.blocksPerDay !== null ? formatCoinAmount(row.blocksPerDay) : '--'}
-                      </td>
-                      <td className="py-2 pr-3 text-slate-300">
-                        {row.dailyGain !== null
-                          ? `${formatCoinAmount(row.dailyGain)} ${row.symbol}`
-                          : '--'}
-                      </td>
-                      <td className="py-2 pr-3 font-semibold text-emerald-400">
-                        {row.dailyGainUSD !== null ? `$${row.dailyGainUSD.toFixed(2)}` : '--'}
-                      </td>
-                      <td className="py-2 pr-3 text-slate-300">
-                        {row.weeklyGainUSD !== null ? `$${row.weeklyGainUSD.toFixed(2)}` : '--'}
-                      </td>
-                      <td className="py-2 pr-3 text-slate-300">
-                        {row.monthlyGainUSD !== null
-                          ? `$${row.monthlyGainUSD.toFixed(2)}`
-                          : '--'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="mt-3 text-xs text-slate-500">
-              * Moeda sem saque disponível no jogo.
-            </p>
-          </Card>
-        )}
       </div>
     </div>
   )
