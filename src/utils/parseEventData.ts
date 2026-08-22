@@ -19,6 +19,7 @@ export interface ParsedEvent {
   currentPoints: number | null
   pointsNeededForLevel: number | null
   mainReward: string | null
+  maxMultiplier: number | null
   rewards: EventReward[]
 }
 
@@ -37,16 +38,34 @@ function isNoiseLine(line: string): boolean {
   const lower = line.toLowerCase()
   if (NOISE_EXACT.has(lower)) return true
   if (lower.startsWith('lootbox')) return true
-  // Moeda + percentual do bloco Exchange, ex: "TRX -30%", "BNB +12.5%".
+  // Moeda + percentual numa linha só (formato alternativo), ex: "TRX -30%".
   if (/^[a-z]{2,6}\s*[-+]?\d+(\.\d+)?%$/i.test(line.trim())) return true
   return false
 }
 
+// Bloco Exchange no texto real: símbolo da moeda e percentual vêm em DUAS linhas
+// separadas ("TRX" / "-30%"), não numa linha só — filtra o par junto.
+function isCurrencyPercentPair(line: string, nextLine: string | undefined): boolean {
+  return /^[A-Z]{2,6}$/.test(line) && !!nextLine && /^[-+]?\d+(\.\d+)?%$/.test(nextLine)
+}
+
 function sanitizeLines(text: string): string[] {
-  return text
+  const rawLines = text
     .split('\n')
     .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !isNoiseLine(line))
+    .filter((line) => line.length > 0)
+
+  const result: string[] = []
+  for (let i = 0; i < rawLines.length; i++) {
+    const line = rawLines[i]
+    if (isNoiseLine(line)) continue
+    if (isCurrencyPercentPair(line, rawLines[i + 1])) {
+      i++ // pula também a linha de percentual que acompanha
+      continue
+    }
+    result.push(line)
+  }
+  return result
 }
 
 function toNumber(raw: string): number {
@@ -55,12 +74,13 @@ function toNumber(raw: string): number {
 
 const POINTS_LINE = /^([\d.,]+)\s*\/\s*([\d.,]+)\s*Points$/i
 const REWARD_IMG_LINE = /^(?:\d+)?reward img$/i
+const MAX_MULTIPLIER_LINE = /^max:{1,2}\s*x?(\d+)$/i
 const MONEY_VALUE = /^([\d.,]+)\s*(RST|RLT)$/i
 const POWER_TEMP_VALUE = /^(.*Gh\/s)\s*\((\d+)d\)$/i
 const POWER_BONUS_VALUE = /^(.*Gh\/s)([\d.,]+)%?$/
 
 // Reconstrói "220.000 Gh/s0" -> "220.000 Gh/s (+0%)"; texto livre ("Battery x3")
-// passa direto, sem alteração.
+// e "Gh/s (Xd)" passam direto, sem alteração.
 function formatRewardValue(raw: string): string {
   const match = raw.trim().match(POWER_BONUS_VALUE)
   if (!match) return raw.trim()
@@ -106,10 +126,44 @@ function classifyReward(raw: string): RewardClassification {
   return { rewardType: 'other' }
 }
 
+// Pontos reais (total acumulado / necessário naquele nível) por evento conhecido.
+// O texto colado do jogo não traz essa informação junto de cada recompensa — só
+// o "X / Y Points" do nível atual. Isso é um mapa fixo por enquanto (conhecida
+// limitação: não generaliza pra eventos ainda não catalogados aqui).
+const KNOWN_EVENT_POINTS: Record<string, Record<number, { totalPoints: number; pointsForLevel: number }>> = {
+  'Bronze III Progression': {
+    1: { totalPoints: 500, pointsForLevel: 500 },
+    2: { totalPoints: 1500, pointsForLevel: 1000 },
+    3: { totalPoints: 2000, pointsForLevel: 500 },
+    4: { totalPoints: 3500, pointsForLevel: 1500 },
+    5: { totalPoints: 5500, pointsForLevel: 2000 },
+    6: { totalPoints: 8500, pointsForLevel: 3000 },
+    7: { totalPoints: 9000, pointsForLevel: 500 },
+    8: { totalPoints: 14000, pointsForLevel: 5000 },
+    9: { totalPoints: 18000, pointsForLevel: 4000 },
+    10: { totalPoints: 30000, pointsForLevel: 12000 },
+    11: { totalPoints: 35000, pointsForLevel: 5000 },
+    12: { totalPoints: 45000, pointsForLevel: 10000 },
+    13: { totalPoints: 65000, pointsForLevel: 20000 },
+    14: { totalPoints: 90000, pointsForLevel: 25000 },
+    15: { totalPoints: 105000, pointsForLevel: 15000 },
+    16: { totalPoints: 175000, pointsForLevel: 70000 },
+    17: { totalPoints: 200000, pointsForLevel: 25000 },
+    18: { totalPoints: 300000, pointsForLevel: 100000 },
+    19: { totalPoints: 500000, pointsForLevel: 200000 },
+    20: { totalPoints: 1000000, pointsForLevel: 500000 },
+  },
+}
+
 export function parseEventText(text: string): ParsedEvent {
   const lines = sanitizeLines(text)
 
-  const eventName = lines[0] ?? null
+  const mainRewardLabelIndex = lines.findIndex((line) => /main reward/i.test(line))
+
+  // O nome do evento vem depois do bloco "Left time: <valor>" e antes de
+  // "main reward" — não é a primeira linha do texto (essa é "Left time:").
+  const eventName =
+    mainRewardLabelIndex > 0 ? lines[mainRewardLabelIndex - 1] : (lines[0] ?? null)
 
   const leftTimeIndex = lines.findIndex((line) => /^left time:/i.test(line))
   let timeLeft: string | null = null
@@ -117,6 +171,12 @@ export function parseEventText(text: string): ParsedEvent {
     const sameLineValue = lines[leftTimeIndex].replace(/^left time:\s*/i, '').trim()
     timeLeft = sameLineValue || lines[leftTimeIndex + 1] || null
   }
+
+  const maxMultiplierIndex = lines.findIndex((line) => MAX_MULTIPLIER_LINE.test(line))
+  const maxMultiplier =
+    maxMultiplierIndex !== -1
+      ? Number(lines[maxMultiplierIndex].match(MAX_MULTIPLIER_LINE)![1])
+      : null
 
   const pointsIndex = lines.findIndex((line) => POINTS_LINE.test(line))
   let currentLevel: number | null = null
@@ -133,7 +193,6 @@ export function parseEventText(text: string): ParsedEvent {
     }
   }
 
-  const mainRewardLabelIndex = lines.findIndex((line) => /main reward/i.test(line))
   let mainReward: string | null = null
   if (mainRewardLabelIndex !== -1) {
     let i = mainRewardLabelIndex + 1
@@ -142,6 +201,8 @@ export function parseEventText(text: string): ParsedEvent {
     }
     mainReward = i < lines.length ? formatRewardValue(lines[i]) : null
   }
+
+  const knownPoints = eventName ? KNOWN_EVENT_POINTS[eventName] : undefined
 
   const rewards: EventReward[] = []
   for (let i = 0; i < lines.length; i++) {
@@ -158,15 +219,14 @@ export function parseEventText(text: string): ParsedEvent {
     if (!rewardName || !rawValue) continue
 
     const classification = classifyReward(rawValue)
+    const knownForLevel = knownPoints?.[level]
 
     rewards.push({
       level,
-      // O texto colado não traz pontos por nível dentro do bloco de recompensa em
-      // si (só nível + badge + nome + valor) — assumimos progressão uniforme
-      // usando o "pointsNeededForLevel" do cabeçalho até termos um exemplo real
-      // que mostre pontos variáveis por nível.
-      totalPoints: pointsNeededForLevel !== null ? level * pointsNeededForLevel : 0,
-      pointsForLevel: pointsNeededForLevel ?? 0,
+      totalPoints:
+        knownForLevel?.totalPoints ??
+        (pointsNeededForLevel !== null ? level * pointsNeededForLevel : 0),
+      pointsForLevel: knownForLevel?.pointsForLevel ?? (pointsNeededForLevel ?? 0),
       rewardName,
       rewardValue: formatRewardValue(rawValue),
       ...classification,
@@ -182,6 +242,7 @@ export function parseEventText(text: string): ParsedEvent {
     currentPoints,
     pointsNeededForLevel,
     mainReward,
+    maxMultiplier,
     rewards,
   }
 }

@@ -30,7 +30,6 @@ export default function Eventos() {
   const [parseError, setParseError] = useState<string | null>(null)
 
   const [baseMultiplier, setBaseMultiplier] = useState(1)
-  const [maxMultiplier, setMaxMultiplier] = useState(1000)
 
   function handleImport() {
     setParseError(null)
@@ -51,9 +50,10 @@ export default function Eventos() {
       : null
 
   const totalValue = event ? calculateEventTotalValue(event.rewards) : 0
-  const difficulty: EventDifficulty = { baseMultiplier, maxMultiplier }
+  const difficulty: EventDifficulty | null =
+    event?.maxMultiplier != null ? { baseMultiplier, maxMultiplier: event.maxMultiplier } : null
   const recommendation =
-    event && totalValue > 0 ? calculateRecommendedMultiplier(totalValue, difficulty) : null
+    difficulty && totalValue > 0 ? calculateRecommendedMultiplier(totalValue, difficulty) : null
 
   return (
     <div>
@@ -132,15 +132,15 @@ export default function Eventos() {
             </Card>
 
             <Card title="Dificuldade do Evento">
-              <p className="text-xs text-slate-500">
-                Esses dois valores não vêm no texto colado — digite manualmente a
-                partir do painel de multiplicador do jogo.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-6">
+              <div className="flex flex-wrap gap-6">
                 <div>
                   <label className="mb-1 block text-xs text-slate-400">
                     Multiplicador base (por RLT)
                   </label>
+                  <p className="mb-1 text-xs text-slate-500">
+                    Não vem no texto colado — digite manualmente a partir do painel do
+                    jogo.
+                  </p>
                   <input
                     type="number"
                     value={baseMultiplier}
@@ -149,15 +149,11 @@ export default function Eventos() {
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-slate-400">
-                    Multiplicador máximo
-                  </label>
-                  <input
-                    type="number"
-                    value={maxMultiplier}
-                    onChange={(e) => setMaxMultiplier(Number(e.target.value))}
-                    className="w-32 rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
+                  <p className="text-xs text-slate-400">Multiplicador máximo</p>
+                  <p className="mb-1 text-xs text-slate-500">Extraído do texto colado.</p>
+                  <p className="rounded-md border border-slate-800 bg-slate-800/50 px-3 py-2 text-white">
+                    {event.maxMultiplier != null ? `${event.maxMultiplier}x` : '--'}
+                  </p>
                 </div>
               </div>
             </Card>
@@ -199,8 +195,9 @@ export default function Eventos() {
                 </div>
               ) : (
                 <p className="mt-3 text-sm text-slate-400">
-                  Nenhuma recompensa em RLT/RST ou de minerador foi encontrada nesse
-                  evento — sem valor total pra calcular uma recomendação.
+                  {event.maxMultiplier == null
+                    ? 'Não consegui extrair o multiplicador máximo do texto colado.'
+                    : 'Nenhuma recompensa em RLT/RST ou de minerador foi encontrada nesse evento — sem valor total pra calcular uma recomendação.'}
                 </p>
               )}
             </Card>
