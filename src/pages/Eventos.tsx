@@ -305,7 +305,7 @@ function EventosContent({ event }: { event: EventData }) {
                     <option
                       key={m}
                       value={m}
-                      style={{ color: m === recommendation.recommended ? '#34d399' : undefined }}
+                      style={{ color: m === recommendation.recommended ? '#34d399' : '#ffffff' }}
                     >
                       {m}x
                     </option>
