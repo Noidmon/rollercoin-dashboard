@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import SortDropdown, { type SortDropdownOption } from '../components/SortDropdown'
+import { getEffectiveBonus, getEffectivePower, type MinerMerge } from '../utils/minerPower'
 
 interface Miner {
   id: string
@@ -13,7 +14,7 @@ interface Miner {
   cells: number
   image: string | null
   marketplaceUrl: string
-  merges: unknown[]
+  merges: MinerMerge[]
 }
 
 interface MinersData {
@@ -92,13 +93,21 @@ export default function Mineradores() {
       case 'antigos':
         return [...filteredMiners].reverse()
       case 'poder_desc':
-        return [...filteredMiners].sort((a, b) => Number(b.power) - Number(a.power))
+        return [...filteredMiners].sort(
+          (a, b) => Number(getEffectivePower(b)) - Number(getEffectivePower(a)),
+        )
       case 'poder_asc':
-        return [...filteredMiners].sort((a, b) => Number(a.power) - Number(b.power))
+        return [...filteredMiners].sort(
+          (a, b) => Number(getEffectivePower(a)) - Number(getEffectivePower(b)),
+        )
       case 'bonus_desc':
-        return [...filteredMiners].sort((a, b) => Number(b.bonus) - Number(a.bonus))
+        return [...filteredMiners].sort(
+          (a, b) => Number(getEffectiveBonus(b)) - Number(getEffectiveBonus(a)),
+        )
       case 'bonus_asc':
-        return [...filteredMiners].sort((a, b) => Number(a.bonus) - Number(b.bonus))
+        return [...filteredMiners].sort(
+          (a, b) => Number(getEffectiveBonus(a)) - Number(getEffectiveBonus(b)),
+        )
       case 'recentes':
       default:
         return filteredMiners
