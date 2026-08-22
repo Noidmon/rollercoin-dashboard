@@ -91,7 +91,7 @@ export default function Eventos() {
     <div>
       <h1 className="text-2xl font-semibold text-white">Eventos</h1>
 
-      <div className="mt-4 grid grid-cols-1 items-stretch gap-4 lg:grid-cols-[320px_1fr] lg:h-[calc(100vh-140px)]">
+      <div className="mt-4 grid grid-cols-1 items-stretch gap-4 lg:grid-cols-[320px_1fr] lg:h-[calc(100vh-112px)] lg:grid-rows-[minmax(0,1fr)]">
         <div className="space-y-4 lg:sticky lg:top-8 lg:h-fit">
           {event.cover_image_path && (
             <img
@@ -272,6 +272,7 @@ export default function Eventos() {
                     <th className="py-2 pr-3 font-medium">Nível</th>
                     <th className="py-2 pr-3 font-medium">Total</th>
                     <th className="py-2 pr-3 font-medium">Pontos</th>
+                    <th className="py-2 pr-3 font-medium">Jogos</th>
                     <th className="py-2 pr-3 font-medium">Nome</th>
                     <th className="py-2 pr-3 font-medium">Valor</th>
                     <th className="py-2 pr-3 font-medium">Caixas</th>
@@ -291,6 +292,16 @@ export default function Eventos() {
                         ? Math.ceil(reward.required_xp / (marketplaceXp * multiplier))
                         : null
 
+                    // Cada level-up de dificuldade em minigame = xp_reward da task
+                    // "game_level" (multiplicador se aplica ao XP ganho), mas requer
+                    // jogar 3 partidas pra disparar um level-up.
+                    // ASSUNÇÃO: confirmar com o usuário se "3 jogos por level-up" é
+                    // sempre fixo, ou varia por dificuldade/jogo.
+                    const games =
+                      gameLevelXp > 0
+                        ? Math.ceil(reward.required_xp / (gameLevelXp * multiplier)) * 3
+                        : null
+
                     return (
                       <tr key={reward.reward_id} className="border-b border-slate-800/60">
                         <td className="py-2 pr-3">
@@ -305,6 +316,7 @@ export default function Eventos() {
                         <td className="py-2 pr-3 text-slate-300">
                           {reward.level_xp.toLocaleString('en-US')}
                         </td>
+                        <td className="py-2 pr-3 text-slate-300">{games ?? '--'}</td>
                         <td className="py-2 pr-3 text-slate-200">{reward.name}</td>
                         <td className="py-2 pr-3 text-slate-200">{reward.value_text}</td>
                         <td className="py-2 pr-3 text-slate-300">{boxes ?? '--'}</td>
