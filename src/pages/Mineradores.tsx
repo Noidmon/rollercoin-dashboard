@@ -92,13 +92,13 @@ export default function Mineradores() {
       case 'antigos':
         return [...filteredMiners].reverse()
       case 'poder_desc':
-        return [...filteredMiners].sort((a, b) => b.power - a.power)
+        return [...filteredMiners].sort((a, b) => Number(b.power) - Number(a.power))
       case 'poder_asc':
-        return [...filteredMiners].sort((a, b) => a.power - b.power)
+        return [...filteredMiners].sort((a, b) => Number(a.power) - Number(b.power))
       case 'bonus_desc':
-        return [...filteredMiners].sort((a, b) => b.bonus - a.bonus)
+        return [...filteredMiners].sort((a, b) => Number(b.bonus) - Number(a.bonus))
       case 'bonus_asc':
-        return [...filteredMiners].sort((a, b) => a.bonus - b.bonus)
+        return [...filteredMiners].sort((a, b) => Number(a.bonus) - Number(b.bonus))
       case 'recentes':
       default:
         return filteredMiners
