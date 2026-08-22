@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react'
 import { usePlayer } from '../context/PlayerContext'
-import { getCryptoPrices, COIN_SYMBOL_TO_COINGECKO_ID } from '../services/prices'
+import { useNetworkData } from '../context/NetworkDataContext'
+import { COIN_SYMBOL_TO_COINGECKO_ID } from '../services/prices'
 import {
   parseNetworkDistribution,
   parseNetworkDistributionText,
 } from '../utils/parseNetworkDistribution'
-import { calculateCoinEarnings, type CoinNetworkData, type CoinEarnings } from '../utils/calculateEarnings'
+import { calculateCoinEarnings, type CoinEarnings } from '../utils/calculateEarnings'
 import { BLOCK_TIME_SECONDS } from '../data/blockTimes'
 import { getLeagueInfo } from '../data/leagues'
 import Card from '../components/Card'
+import CurrencyIcon from '../components/CurrencyIcon'
 
 const GHS_PER_EHS = 1_000_000_000
 
@@ -60,26 +62,16 @@ const BLOCK_DURATIONS = Object.entries(BLOCK_TIME_SECONDS)
 
 export default function Calculadora() {
   const { playerData } = usePlayer()
-
-  const [prices, setPrices] = useState<Record<string, number | null>>({})
-  const [pricesLoading, setPricesLoading] = useState(true)
-  const [pricesError, setPricesError] = useState<string | null>(null)
+  const { networkData, setNetworkData, prices, pricesLoading, pricesError } =
+    useNetworkData()
 
   const [rawInput, setRawInput] = useState('')
-  const [networkData, setNetworkData] = useState<CoinNetworkData[] | null>(null)
   const [parseError, setParseError] = useState<string | null>(null)
 
   const [customPowerEhs, setCustomPowerEhs] = useState<number | null>(null)
   const [displayMode, setDisplayMode] = useState<DisplayMode>('usd')
   const [sortColumn, setSortColumn] = useState<SortColumn>('daily')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
-
-  useEffect(() => {
-    getCryptoPrices(Object.values(COIN_SYMBOL_TO_COINGECKO_ID))
-      .then(setPrices)
-      .catch((err) => setPricesError(err instanceof Error ? err.message : String(err)))
-      .finally(() => setPricesLoading(false))
-  }, [])
 
   useEffect(() => {
     if (playerData) {
@@ -223,7 +215,10 @@ export default function Calculadora() {
             <div className="space-y-2">
               {BLOCK_DURATIONS.map(({ symbol, seconds }) => (
                 <div key={symbol} className="flex items-center justify-between text-sm">
-                  <span className="text-slate-300">{symbol}</span>
+                  <span className="flex items-center gap-2 text-slate-300">
+                    <CurrencyIcon symbol={symbol} />
+                    {symbol}
+                  </span>
                   <span className="whitespace-nowrap text-slate-400">
                     {formatBlockTime(seconds)}
                   </span>
@@ -285,7 +280,12 @@ export default function Calculadora() {
                   <tbody>
                     {rows.map((row) => (
                       <tr key={row.symbol} className="border-b border-slate-800/60">
-                        <td className="py-2 pr-3 text-slate-300">{row.name}</td>
+                        <td className="py-2 pr-3 text-slate-300">
+                          <span className="flex items-center gap-2">
+                            <CurrencyIcon symbol={row.symbol} />
+                            {row.name}
+                          </span>
+                        </td>
                         <td className="whitespace-nowrap py-2 pr-3 text-slate-300">
                           {formatPercent(row.percentNetwork)}
                         </td>
@@ -313,12 +313,16 @@ export default function Calculadora() {
           </Card>
 
           <Card title="Preços">
+            <p className="-mt-2 mb-3 text-xs text-slate-500">via CoinGecko</p>
             <div className="space-y-2">
               {Object.keys(COIN_SYMBOL_TO_COINGECKO_ID).map((symbol) => {
                 const price = priceFor(symbol)
                 return (
                   <div key={symbol} className="flex items-center justify-between text-sm">
-                    <span className="text-slate-300">{symbol}</span>
+                    <span className="flex items-center gap-2 text-slate-300">
+                      <CurrencyIcon symbol={symbol} />
+                      {symbol}
+                    </span>
                     <span className="whitespace-nowrap text-slate-400">
                       {pricesLoading ? '...' : formatUSD(price)}
                     </span>

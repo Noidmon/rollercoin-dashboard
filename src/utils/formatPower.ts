@@ -9,9 +9,18 @@ export function formatPower(value: number): string {
     unitIndex++
   }
 
-  const formatted = scaled.toLocaleString('en-US', {
-    maximumFractionDigits: 3,
-  })
+  const sign = scaled < 0 ? '-' : ''
+  const absScaled = Math.abs(scaled)
+
+  // Trunca em 3 casas decimais (não arredonda). toFixed(6) só corta ruído de
+  // ponto flutuante antes do corte de verdade, feito via string.
+  const [integerPart, decimalPart = ''] = absScaled.toFixed(6).split('.')
+  const truncatedDecimal = decimalPart.slice(0, 3).replace(/0+$/, '')
+
+  const formattedInteger = Number(integerPart).toLocaleString('en-US')
+  const formatted = truncatedDecimal
+    ? `${sign}${formattedInteger}.${truncatedDecimal}`
+    : `${sign}${formattedInteger}`
 
   return `${formatted} ${UNITS[unitIndex]}`
 }

@@ -1,8 +1,26 @@
 import { useState } from 'react'
 import { usePlayer } from '../context/PlayerContext'
+import { useNetworkData } from '../context/NetworkDataContext'
 import { getLeagueInfo, getNextLeagueImageUrl, proxyImageUrl } from '../data/leagues'
 import { formatPower } from '../utils/formatPower'
+import { calculateCoinEarnings, type CoinEarnings } from '../utils/calculateEarnings'
+import { isWithdrawable } from '../data/withdrawable'
+import { COIN_SYMBOL_TO_COINGECKO_ID } from '../services/prices'
 import Card from '../components/Card'
+import CurrencyIcon from '../components/CurrencyIcon'
+
+function formatUSD(value: number | null): string {
+  return value !== null && Number.isFinite(value)
+    ? `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : '--'
+}
+
+function bestEarner(rows: CoinEarnings[], predicate: (row: CoinEarnings) => boolean) {
+  return rows
+    .filter(predicate)
+    .filter((row) => row.dailyGainUSD !== null)
+    .sort((a, b) => (b.dailyGainUSD ?? -Infinity) - (a.dailyGainUSD ?? -Infinity))[0] ?? null
+}
 
 function LeagueBadge({
   src,
@@ -40,6 +58,7 @@ function formatRegistrationDate(iso: string): string {
 
 export default function Dashboard() {
   const { playerData } = usePlayer()
+  const { networkData, prices } = useNetworkData()
 
   if (!playerData) {
     return (
@@ -60,6 +79,32 @@ export default function Dashboard() {
     getNextLeagueImageUrl(playerData.currentLeagueImageUrl),
   )
   const powerWithoutTemp = playerData.current_power - playerData.temp
+
+  function priceFor(symbol: string): number | null {
+    const coingeckoId = COIN_SYMBOL_TO_COINGECKO_ID[symbol]
+    if (!coingeckoId) return null
+    return prices[coingeckoId] ?? null
+  }
+
+  const earningsRows: CoinEarnings[] | null = networkData
+    ? networkData.map((coin) =>
+        calculateCoinEarnings(coin, playerData.current_power, priceFor(coin.symbol)),
+      )
+    : null
+
+  const bestGeral = earningsRows ? bestEarner(earningsRows, () => true) : null
+  const bestSacavel = earningsRows
+    ? bestEarner(earningsRows, (row) => isWithdrawable(row.symbol))
+    : null
+
+  const liquidityCostPercent =
+    bestGeral &&
+    bestSacavel &&
+    bestGeral.symbol !== bestSacavel.symbol &&
+    bestGeral.dailyGainUSD !== null &&
+    bestSacavel.dailyGainUSD !== null
+      ? ((bestGeral.dailyGainUSD - bestSacavel.dailyGainUSD) / bestGeral.dailyGainUSD) * 100
+      : null
 
   return (
     <div>
@@ -91,8 +136,8 @@ export default function Dashboard() {
                 {formatPower(powerWithoutTemp)}
               </p>
               <p className="mt-2 text-xs text-slate-500">
-                Total menos o poder temporário (que expira). Não é o valor real que
-                conta para a liga.
+                Calculado a partir da sua sala e bônus atuais (sem bônus temporário).
+                Uma diferença em relação ao Max Power é esperada e pode variar.
               </p>
             </Card>
             <Card title="Max Power (marca d'água)">
@@ -173,6 +218,61 @@ export default function Dashboard() {
               <p className="text-lg text-slate-200">{formatPower(playerData.games)}</p>
             </Card>
           </div>
+        </section>
+
+        <section>
+          <h2 className="text-sm font-medium uppercase tracking-wide text-slate-400">
+            Melhor Moeda
+          </h2>
+          <Card title="Ganho Diário Estimado">
+            {!networkData && (
+              <p className="text-sm text-slate-400">
+                Importe os dados de rede na Calculadora primeiro para ver a melhor
+                moeda.
+              </p>
+            )}
+
+            {networkData && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-400">Geral</span>
+                  {bestGeral ? (
+                    <span className="flex items-center gap-2 text-sm font-semibold text-emerald-400">
+                      <CurrencyIcon symbol={bestGeral.symbol} />
+                      {bestGeral.name}
+                      <span className="text-slate-400">
+                        ({formatUSD(bestGeral.dailyGainUSD)}/dia)
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="text-sm text-slate-500">--</span>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-400">Sacável</span>
+                  {bestSacavel ? (
+                    <span className="flex items-center gap-2 text-sm font-semibold text-indigo-300">
+                      <CurrencyIcon symbol={bestSacavel.symbol} />
+                      {bestSacavel.name}
+                      <span className="text-slate-400">
+                        ({formatUSD(bestSacavel.dailyGainUSD)}/dia)
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="text-sm text-slate-500">--</span>
+                  )}
+                </div>
+
+                {liquidityCostPercent !== null && bestGeral && (
+                  <p className="text-xs text-amber-400">
+                    {bestGeral.symbol} paga mais mas não pode ser sacada — custa{' '}
+                    {liquidityCostPercent.toFixed(1)}% em troca de liquidez.
+                  </p>
+                )}
+              </div>
+            )}
+          </Card>
         </section>
       </div>
     </div>
