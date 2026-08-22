@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { CURRENT_EVENT } from '../data/currentEvent'
 import { getRewardImageUrl } from '../utils/parseEventJson'
+import { resolveAssetUrl } from '../utils/resolveAssetUrl'
 import {
   calculateRecommendedMultiplier,
   calculateEventRewardSummary,
@@ -46,6 +47,11 @@ function formatNumber(value: number, maximumFractionDigits = 2): string {
     : '--'
 }
 
+function extractMergeLevel(name: string): number | null {
+  const match = name.match(/\(L(\d+)\)/)
+  return match ? Number(match[1]) : null
+}
+
 function looksLikeEventData(value: unknown): value is EventData {
   return (
     !!value &&
@@ -56,25 +62,49 @@ function looksLikeEventData(value: unknown): value is EventData {
   )
 }
 
-function RewardImage({ imagePath, name }: { imagePath: string; name: string }) {
+function RewardImage({
+  imagePath,
+  name,
+  mergeLevel,
+  sellable,
+}: {
+  imagePath: string
+  name: string
+  mergeLevel: number | null
+  sellable: boolean | null
+}) {
   const [failed, setFailed] = useState(false)
 
-  if (failed) {
-    return (
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-slate-800 text-slate-600">
-        ?
-      </div>
-    )
-  }
-
   return (
-    <img
-      src={getRewardImageUrl(imagePath)}
-      alt={name}
-      loading="lazy"
-      onError={() => setFailed(true)}
-      className="h-10 w-10 shrink-0 rounded-md bg-slate-800 object-contain"
-    />
+    <div className="relative h-10 w-10 shrink-0">
+      {failed ? (
+        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-slate-800 text-slate-600">
+          ?
+        </div>
+      ) : (
+        <img
+          src={getRewardImageUrl(imagePath)}
+          alt={name}
+          loading="lazy"
+          onError={() => setFailed(true)}
+          className="h-10 w-10 rounded-md bg-slate-800 object-contain"
+        />
+      )}
+      {mergeLevel !== null && (
+        <img
+          src={resolveAssetUrl(`rollercoin/levels/level_${mergeLevel}.webp`)}
+          alt={`Nível ${mergeLevel}`}
+          className="absolute -left-1 -top-1 h-4 w-4"
+        />
+      )}
+      {sellable === false && (
+        <img
+          src={resolveAssetUrl('rollercoin/icons/sellable_disabled.webp')}
+          alt="Não vendável"
+          className="absolute -right-1 -top-1 h-4 w-4"
+        />
+      )}
+    </div>
   )
 }
 
@@ -362,10 +392,17 @@ function EventosContent({ event }: { event: EventData }) {
                         ? Math.ceil(reward.required_xp / (gameLevelXp * multiplier)) * 3
                         : null
 
+                    const mergeLevel = extractMergeLevel(reward.name)
+
                     return (
                       <tr key={reward.reward_id} className="border-b border-slate-800/60">
                         <td className="py-2 pr-3">
-                          <RewardImage imagePath={reward.image_path} name={reward.name} />
+                          <RewardImage
+                            imagePath={reward.image_path}
+                            name={reward.name}
+                            mergeLevel={mergeLevel}
+                            sellable={reward.sellable}
+                          />
                         </td>
                         <td className="py-2 pr-3 text-slate-300">
                           {reward.required_level}

@@ -1,9 +1,11 @@
-// Sincroniza ícones de reward (special/item/rack) + imagens do evento de
-// api.minaryganar.com pra public/rc-icons/, atualizando src/data/assetManifest.ts.
+// Sincroniza ícones de reward (special/item/rack) + imagens do evento, e os
+// assets fixos de UI (FIXED_UI_ASSETS, sempre), de api.minaryganar.com pra
+// public/rc-icons/, atualizando src/data/assetManifest.ts.
 //
 // Uso:
 //   node scripts/sync-rc-icons.js caminho/para/evento.json
 //   cat evento.json | node scripts/sync-rc-icons.js
+//   node scripts/sync-rc-icons.js   (sem evento -- só sincroniza os fixos)
 //
 // Reusável -- roda de novo sempre que um evento novo tiver ícones ainda não
 // sincronizados. Mesmo padrão a ser reaproveitado pros +8000 mineradores no
@@ -19,6 +21,19 @@ const ICONS_DIR = join(ROOT, 'public', 'rc-icons')
 const MANIFEST_PATH = join(ROOT, 'src', 'data', 'assetManifest.ts')
 
 const SYNCED_REFERENCE_TYPES = new Set(['special', 'item', 'rack'])
+
+// Assets fixos de UI -- não são "recompensas" de nenhum evento específico, são
+// elementos visuais reaproveitados em qualquer merge/minerador (selo de nível,
+// ícone de "não vendável"). Sempre garantidos, independente do JSON de evento.
+const FIXED_UI_ASSETS = [
+  'rollercoin/levels/level_1.webp',
+  'rollercoin/levels/level_2.webp',
+  'rollercoin/levels/level_3.webp',
+  'rollercoin/levels/level_4.webp',
+  'rollercoin/levels/level_5.webp',
+  'rollercoin/levels/level_6.webp',
+  'rollercoin/icons/sellable_disabled.webp',
+]
 
 const MANIFEST_HEADER = `// Mapeia image_path (caminho relativo, ex: "rollercoin/items/bonus_power_3.webp")
 // para o caminho LOCAL em public/rc-icons/, depois de sincronizado.
@@ -83,10 +98,21 @@ async function downloadIcon(imagePath) {
 
 async function main() {
   const filePath = process.argv[2]
-  const raw = filePath ? readFileSync(filePath, 'utf-8') : await readStdin()
-  const event = JSON.parse(raw)
 
-  const imagePaths = collectImagePaths(event)
+  let eventImagePaths = []
+  if (filePath) {
+    const raw = readFileSync(filePath, 'utf-8')
+    eventImagePaths = collectImagePaths(JSON.parse(raw))
+  } else if (!process.stdin.isTTY) {
+    const raw = await readStdin()
+    if (raw.trim()) {
+      eventImagePaths = collectImagePaths(JSON.parse(raw))
+    }
+  }
+  // sem argumento de arquivo e sem stdin redirecionado: só sincroniza os
+  // FIXED_UI_ASSETS abaixo, sem exigir um JSON de evento.
+
+  const imagePaths = [...new Set([...eventImagePaths, ...FIXED_UI_ASSETS])]
 
   const existingManifestText = readFileSync(MANIFEST_PATH, 'utf-8')
   const manifest = parseExistingManifest(existingManifestText)
