@@ -1,5 +1,13 @@
-// Parseia texto colado do marketplace do RollerCoin: uma sequência de links
-// markdown repetidos em grupos de 4 por peça --
+// Parseia texto colado do marketplace do RollerCoin: uma sequência repetida
+// em grupos de 4 linhas por peça. O formato REAL (o que o usuário realmente
+// cola ao selecionar/copiar da tela do jogo) é texto puro, sem colchetes nem
+// links:
+//   Common Hashboard
+//   Quantity: 2 878 690
+//   From
+//   0.021 RLT
+// Também aceita o formato com links markdown (caso apareça em algum
+// contexto), onde cada linha vem como [texto](url) -- extrai só o texto:
 //   [Nome da Peça](url)
 //   [Quantity: N](url)
 //   [From](url)
@@ -11,16 +19,25 @@ export interface ParsedPartPrice {
   priceRLT: number
 }
 
-const LINK_TEXT_PATTERN = /\[(.*?)\]\(.*?\)/g
+const MARKDOWN_LINK_LINE_PATTERN = /^\[(.*)\]\(.*\)$/
 const PRICE_PATTERN = /^([\d.]+)\s*RLT$/i
 
+function extractLineValue(line: string): string {
+  const match = line.match(MARKDOWN_LINK_LINE_PATTERN)
+  return (match ? match[1] : line).trim()
+}
+
 export function parseMarketplacePaste(raw: string): ParsedPartPrice[] {
-  const linkTexts = [...raw.matchAll(LINK_TEXT_PATTERN)].map((m) => m[1].trim())
+  const lines = raw
+    .split('\n')
+    .map(extractLineValue)
+    .filter((line) => line.length > 0)
+
   const results: ParsedPartPrice[] = []
 
-  for (let i = 0; i + 3 < linkTexts.length; i += 4) {
-    const name = linkTexts[i]
-    const priceText = linkTexts[i + 3]
+  for (let i = 0; i + 3 < lines.length; i += 4) {
+    const name = lines[i]
+    const priceText = lines[i + 3]
     const priceMatch = priceText.match(PRICE_PATTERN)
     if (!name || !priceMatch) continue
 

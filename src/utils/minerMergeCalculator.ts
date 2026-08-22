@@ -67,6 +67,51 @@ export function getMergeLevelRarity(merge: MinerMerge): Rarity | null {
   return levelToRarity(level)
 }
 
+export function partImagePath(type: PartType, rarity: Rarity): string {
+  return `rollercoin/parts/${type}_${rarity}.webp`
+}
+
+export interface ActivePart {
+  type: PartType
+  rarity: Rarity
+  count: number
+}
+
+// Peças de fato usadas naquele nível (count > 0) -- normalmente só 1 tipo,
+// mas alguns merges usam os 3 ao mesmo tempo.
+export function getActiveParts(merge: MinerMerge): ActivePart[] {
+  const parts: ActivePart[] = []
+  const candidates: [PartType, number, number][] = [
+    ['fan', merge.fanCount, merge.fanLevel],
+    ['wire', merge.wireCount, merge.wireLevel],
+    ['hashboard', merge.hashboardCount, merge.hashboardLevel],
+  ]
+  for (const [type, count, level] of candidates) {
+    if (count <= 0) continue
+    const rarity = levelToRarity(level)
+    if (rarity) parts.push({ type, rarity, count })
+  }
+  return parts
+}
+
+// Cores exatas extraídas via DevTools (getComputedStyle) do background de
+// cada célula da tabela de custos em minaryganar.com/rollercoin/miners/
+// goal-rush -- não estimadas visualmente. Nível 7 (raro, ~43 mineradores)
+// não tem cor nem ícone de referência (level_7.webp não existe no servidor
+// deles, confirmado via curl -> 404): usa um cinza neutro como fallback.
+const LEVEL_COLORS: Record<number, string> = {
+  2: '#20A300',
+  3: '#0B9696',
+  4: '#CA27AE',
+  5: '#B19500',
+  6: '#B50000',
+}
+const FALLBACK_LEVEL_COLOR = '#475569'
+
+export function getMergeLevelColor(level: number): string {
+  return LEVEL_COLORS[level] ?? FALLBACK_LEVEL_COLOR
+}
+
 function getPartPrice(
   type: PartType,
   level: number,
@@ -89,6 +134,7 @@ function powerGhSToPhS(powerGhS: number): number {
 export interface MergeCostRow {
   merge: MinerMerge
   totalPieces: number
+  activeParts: ActivePart[]
   piecesCost: number
   mergeFeeCost: number
   piecesPlusFee: number
@@ -135,6 +181,7 @@ export function calculateMergeCostTable(
     rows.push({
       merge,
       totalPieces,
+      activeParts: getActiveParts(merge),
       piecesCost: piecesCostDiscounted,
       mergeFeeCost: mergeFeeDiscounted,
       piecesPlusFee,

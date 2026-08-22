@@ -63,6 +63,13 @@ export default function Mineradores() {
     return data.miners.filter((m) => m.name.toLowerCase().includes(term))
   }, [data, search])
 
+  // Contadores refletem o filtro ativo -- somam só os resultados filtrados,
+  // não o total fixo do miners.json.
+  const filteredMergesCount = useMemo(
+    () => filteredMiners.reduce((sum, m) => sum + m.merges.length, 0),
+    [filteredMiners],
+  )
+
   // Não temos data de lançamento no miners.json (a API pública não expõe
   // isso na lista) -- RECENTES/ANTIGOS usam a ordem original do array (e o
   // reverse dela) como proxy de "mais novo primeiro". Não é um critério
@@ -157,13 +164,13 @@ export default function Mineradores() {
           <div className="rounded-md border border-slate-500 bg-slate-900 px-4 py-2 text-center">
             <div className="text-xs uppercase tracking-wide text-slate-400">Mineradores</div>
             <div className="text-lg font-semibold text-white">
-              {data.total.toLocaleString('en-US')}
+              {filteredMiners.length.toLocaleString('en-US')}
             </div>
           </div>
           <div className="rounded-md border border-slate-500 bg-slate-900 px-4 py-2 text-center">
             <div className="text-xs uppercase tracking-wide text-slate-400">Merges</div>
             <div className="text-lg font-semibold text-white">
-              {data.totalMerges.toLocaleString('en-US')}
+              {filteredMergesCount.toLocaleString('en-US')}
             </div>
           </div>
         </div>

@@ -4,10 +4,14 @@ import Card from '../components/Card'
 import { formatPower } from '../utils/formatPower'
 import { parseMarketplacePaste } from '../utils/parseMarketplacePaste'
 import { mergeStoredPartPrices, readStoredPartPrices } from '../utils/partPriceStorage'
+import { resolveAssetUrl } from '../utils/resolveAssetUrl'
 import {
   FORGE_LEVELS,
   calculateMergeCostTable,
+  getMergeLevelColor,
   getMergeLevelRarity,
+  partImagePath,
+  type ActivePart,
   type CraftingPrices,
 } from '../utils/minerMergeCalculator'
 import type { Miner, MinersData } from '../types/miner'
@@ -19,6 +23,57 @@ function toRoman(n: number): string {
 
 function formatRLT(value: number): string {
   return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+// Alpha aplicado sobre as cores exatas de nível (hex de 6 dígitos + alpha de
+// 2 dígitos = hex de 8 dígitos, suportado em todos os browsers evergreen) --
+// full opacity nas cores reais deixava o texto branco pouco legível em cima
+// de tons como o amarelo/dourado do nível V.
+function levelColorWithAlpha(level: number, alphaHex: string): string {
+  return `${getMergeLevelColor(level)}${alphaHex}`
+}
+
+function LevelBadge({ level }: { level: number }) {
+  const [imgFailed, setImgFailed] = useState(false)
+
+  if (imgFailed) {
+    return (
+      <span
+        className="flex h-8 w-10 items-center justify-center rounded text-xs font-bold text-white"
+        style={{ backgroundColor: getMergeLevelColor(level) }}
+      >
+        {toRoman(level)}
+      </span>
+    )
+  }
+
+  return (
+    <img
+      src={resolveAssetUrl(`rollercoin/levels/level_${level}.webp`)}
+      alt={toRoman(level)}
+      onError={() => setImgFailed(true)}
+      className="h-8 w-10 object-contain"
+    />
+  )
+}
+
+function PartsCell({ parts }: { parts: ActivePart[] }) {
+  if (parts.length === 0) return <span className="text-slate-500">--</span>
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {parts.map((p) => (
+        <span key={p.type} className="flex items-center gap-1">
+          <img
+            src={resolveAssetUrl(partImagePath(p.type, p.rarity))}
+            alt={`${p.rarity} ${p.type}`}
+            className="h-5 w-5 object-contain"
+          />
+          <span className="text-slate-200">x{p.count}</span>
+        </span>
+      ))}
+    </div>
+  )
 }
 
 export default function MineradorDetalhe() {
@@ -109,15 +164,6 @@ export default function MineradorDetalhe() {
     return calculateMergeCostTable(miner, forgeDiscount, partPrices, craftingPrices)
   }, [miner, forgeDiscount, partPrices, craftingPrices])
 
-  const bestRatioIndex = useMemo(() => {
-    if (costRows.length === 0) return -1
-    let bestIdx = 0
-    for (let i = 1; i < costRows.length; i++) {
-      if (costRows[i].ratioPower < costRows[bestIdx].ratioPower) bestIdx = i
-    }
-    return bestIdx
-  }, [costRows])
-
   const searchMatches = useMemo(() => {
     if (!minersData) return []
     const term = searchQuery.trim().toLowerCase()
@@ -172,7 +218,7 @@ export default function MineradorDetalhe() {
 
   return (
     <div>
-      {/* Seção 1: busca + navegação */}
+      {/* Busca */}
       <div ref={searchRef} className="relative max-w-md">
         <input
           type="text"
@@ -223,7 +269,9 @@ export default function MineradorDetalhe() {
             </select>
           </Card>
 
-          {/* Seção 2: card do minerador base */}
+          {/* Card do minerador base -- imagem/células/preços + nível
+              selecionado (navegável) + marketplace, tudo em um card só,
+              igual à referência */}
           <Card title={miner.name}>
             <div className="flex flex-col items-center gap-2">
               {miner.image ? (
@@ -259,60 +307,14 @@ export default function MineradorDetalhe() {
               </div>
             </div>
 
-            <a
-              href={miner.marketplaceUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-4 block rounded-md bg-indigo-600 px-3 py-2 text-center text-sm font-medium text-white hover:bg-indigo-500"
-            >
-              Marketplace ↗
-            </a>
-          </Card>
-
-          {/* Seção 3: colar texto do marketplace */}
-          <Card title="Preço das Peças">
-            <label className="mb-1 block text-xs text-slate-400">Colar texto do marketplace</label>
-            <textarea
-              value={pasteText}
-              onChange={(e) => setPasteText(e.target.value)}
-              placeholder="Cole aqui"
-              rows={6}
-              className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-xs text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            <button
-              type="button"
-              onClick={handleSavePastedPrices}
-              className="mt-2 w-full rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500"
-            >
-              Salvar preços colados
-            </button>
-            {pasteMessage && <p className="mt-2 text-xs text-emerald-400">{pasteMessage}</p>}
-          </Card>
-        </div>
-
-        <div className="space-y-4">
-          {/* Aviso fixo */}
-          <div className="rounded-md border border-yellow-600 bg-yellow-500/20 px-4 py-3 text-center text-sm font-medium text-yellow-200">
-            Ratios recomendados: Poder &lt;1.5 por Ph e Crypto &lt;0.45$ por Ph. Priorize sempre o
-            menor valor.
-          </div>
-
-          {sortedMerges.length === 0 ? (
-            <Card title="Merges">
-              <p className="text-sm text-slate-400">
-                Este minerador não possui níveis de merge disponíveis.
-              </p>
-            </Card>
-          ) : (
-            <>
-              {/* Seção 4: card de detalhe do nível selecionado */}
-              <Card title={miner.name}>
-                <div className="flex items-center justify-between gap-4">
+            {sortedMerges.length > 0 && (
+              <div className="mt-4 border-t border-slate-800 pt-4">
+                <div className="flex items-center justify-between gap-3">
                   <button
                     type="button"
                     onClick={() => setSelectedIndex((i) => Math.max(0, i - 1))}
                     disabled={selectedIndex === 0}
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-slate-700 bg-slate-800 text-white disabled:opacity-40"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-700 bg-slate-800 text-white disabled:opacity-40"
                   >
                     ◄
                   </button>
@@ -350,69 +352,112 @@ export default function MineradorDetalhe() {
                       setSelectedIndex((i) => Math.min(sortedMerges.length - 1, i + 1))
                     }
                     disabled={selectedIndex === sortedMerges.length - 1}
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-slate-700 bg-slate-800 text-white disabled:opacity-40"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-700 bg-slate-800 text-white disabled:opacity-40"
                   >
                     ►
                   </button>
                 </div>
-              </Card>
+              </div>
+            )}
 
-              {/* Seção 5: tabela de custos de merge */}
-              <Card title="Custos de Merge">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-800 text-xs uppercase text-slate-400">
-                        <th className="py-2 pr-3 font-medium">LVL</th>
-                        <th className="py-2 pr-3 font-medium">Peças</th>
-                        <th className="py-2 pr-3 font-medium">Custo de Todas as Peças</th>
-                        <th className="py-2 pr-3 font-medium">Taxa de Merge</th>
-                        <th className="py-2 pr-3 font-medium">Peças + Taxa</th>
-                        <th className="py-2 pr-3 font-medium">Poder</th>
-                        <th className="py-2 pr-3 font-medium">Bônus</th>
-                        <th className="py-2 pr-3 font-medium">Custo Final</th>
-                        <th className="py-2 pr-3 font-medium">Ratio Poder</th>
+            <a
+              href={miner.marketplaceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-4 block rounded-md bg-indigo-600 px-3 py-2 text-center text-sm font-medium text-white hover:bg-indigo-500"
+            >
+              Marketplace ↗
+            </a>
+          </Card>
+
+          {/* Colar texto do marketplace */}
+          <Card title="Preço das Peças">
+            <label className="mb-1 block text-xs text-slate-400">Colar texto do marketplace</label>
+            <textarea
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+              placeholder="Cole aqui"
+              rows={6}
+              className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-xs text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            <button
+              type="button"
+              onClick={handleSavePastedPrices}
+              className="mt-2 w-full rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+            >
+              Salvar preços colados
+            </button>
+            {pasteMessage && <p className="mt-2 text-xs text-emerald-400">{pasteMessage}</p>}
+          </Card>
+        </div>
+
+        <div className="space-y-4">
+          {/* Aviso fixo */}
+          <div className="rounded-md border border-yellow-600 bg-yellow-500/20 px-4 py-3 text-center text-sm font-medium text-yellow-200">
+            Ratios recomendados: Poder &lt;1.5 por Ph e Crypto &lt;0.45$ por Ph. Priorize sempre o
+            menor valor.
+          </div>
+
+          {sortedMerges.length === 0 ? (
+            <Card title="Merges">
+              <p className="text-sm text-slate-400">
+                Este minerador não possui níveis de merge disponíveis.
+              </p>
+            </Card>
+          ) : (
+            <Card title="Custos de Merge">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-xs uppercase text-slate-400">
+                      <th className="py-2 pr-3 font-medium">LVL</th>
+                      <th className="py-2 pr-3 font-medium">Peças</th>
+                      <th className="py-2 pr-3 font-medium">Custo de Todas as Peças</th>
+                      <th className="py-2 pr-3 font-medium">Taxa de Merge</th>
+                      <th className="py-2 pr-3 font-medium">Peças + Taxa</th>
+                      <th className="py-2 pr-3 font-medium">Poder</th>
+                      <th className="py-2 pr-3 font-medium">Bônus</th>
+                      <th className="py-2 pr-3 font-medium">Custo Final</th>
+                      <th className="py-2 pr-3 font-medium">Ratio Poder</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {costRows.map((row, i) => (
+                      <tr
+                        key={row.merge.mergeId}
+                        onClick={() => setSelectedIndex(i)}
+                        style={{ backgroundColor: levelColorWithAlpha(row.merge.level, '33') }}
+                        className={`cursor-pointer border-b border-slate-950/40 ${
+                          i === selectedIndex ? 'ring-2 ring-inset ring-white/70' : ''
+                        }`}
+                      >
+                        <td className="py-2 pr-3">
+                          <LevelBadge level={row.merge.level} />
+                        </td>
+                        <td className="py-2 pr-3">
+                          <PartsCell parts={row.activeParts} />
+                        </td>
+                        <td className="py-2 pr-3 text-slate-100">{formatRLT(row.piecesCost)} RLT</td>
+                        <td className="py-2 pr-3 text-slate-100">
+                          {formatRLT(row.mergeFeeCost)} RLT
+                        </td>
+                        <td className="py-2 pr-3 text-slate-100">
+                          {formatRLT(row.piecesPlusFee)} RLT
+                        </td>
+                        <td className="py-2 pr-3 text-slate-100">{formatPower(row.merge.power)}</td>
+                        <td className="py-2 pr-3 text-slate-100">{row.merge.bonus}%</td>
+                        <td className="py-2 pr-3 font-semibold text-white">
+                          {formatRLT(row.finalCost)} RLT
+                        </td>
+                        <td className="py-2 pr-3 font-semibold text-white">
+                          {formatRLT(row.ratioPower)} RLT
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {costRows.map((row, i) => (
-                        <tr
-                          key={row.merge.mergeId}
-                          onClick={() => setSelectedIndex(i)}
-                          className={`cursor-pointer border-b border-slate-800/60 ${
-                            i === bestRatioIndex
-                              ? 'bg-emerald-600/40 text-white'
-                              : i === selectedIndex
-                                ? 'bg-indigo-500/10'
-                                : 'hover:bg-slate-800/60'
-                          }`}
-                        >
-                          <td className="py-2 pr-3 text-slate-200">{toRoman(row.merge.level)}</td>
-                          <td className="py-2 pr-3 text-slate-300">x{row.totalPieces}</td>
-                          <td className="py-2 pr-3 text-slate-200">{formatRLT(row.piecesCost)} RLT</td>
-                          <td className="py-2 pr-3 text-slate-200">
-                            {formatRLT(row.mergeFeeCost)} RLT
-                          </td>
-                          <td className="py-2 pr-3 text-slate-200">
-                            {formatRLT(row.piecesPlusFee)} RLT
-                          </td>
-                          <td className="py-2 pr-3 text-slate-200">
-                            {formatPower(row.merge.power)}
-                          </td>
-                          <td className="py-2 pr-3 text-slate-200">{row.merge.bonus}%</td>
-                          <td className="py-2 pr-3 font-semibold text-slate-100">
-                            {formatRLT(row.finalCost)} RLT
-                          </td>
-                          <td className="py-2 pr-3 font-semibold text-slate-100">
-                            {formatRLT(row.ratioPower)} RLT
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-            </>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
           )}
         </div>
       </div>

@@ -34,6 +34,24 @@ const FIXED_UI_ASSETS = [
   'rollercoin/levels/level_6.webp',
   'rollercoin/icons/sellable_disabled.webp',
   'rollercoin/icons/merge_enabled.webp',
+  // Ícones de peça de merge (fan/wire/hashboard) x 5 raridades -- confirmado
+  // via DevTools/Network em minaryganar.com que são 15 arquivos distintos,
+  // não um ícone único colorido via CSS.
+  'rollercoin/parts/fan_common.webp',
+  'rollercoin/parts/fan_uncommon.webp',
+  'rollercoin/parts/fan_rare.webp',
+  'rollercoin/parts/fan_epic.webp',
+  'rollercoin/parts/fan_legendary.webp',
+  'rollercoin/parts/wire_common.webp',
+  'rollercoin/parts/wire_uncommon.webp',
+  'rollercoin/parts/wire_rare.webp',
+  'rollercoin/parts/wire_epic.webp',
+  'rollercoin/parts/wire_legendary.webp',
+  'rollercoin/parts/hashboard_common.webp',
+  'rollercoin/parts/hashboard_uncommon.webp',
+  'rollercoin/parts/hashboard_rare.webp',
+  'rollercoin/parts/hashboard_epic.webp',
+  'rollercoin/parts/hashboard_legendary.webp',
 ]
 
 const MANIFEST_HEADER = `// Mapeia image_path (caminho relativo, ex: "rollercoin/items/bonus_power_3.webp")
