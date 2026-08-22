@@ -112,12 +112,6 @@ export default function Eventos() {
           <Card title="Recomendação">
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-400">Valor Total</span>
-                <span className="font-semibold text-slate-200">
-                  {formatNumber(recommendation.totalValue)} RLT
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
                 <span className="text-slate-400">Multiplicador Recomendado</span>
                 <span className="font-semibold text-indigo-300">
                   {recommendation.recommended}x
