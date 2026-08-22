@@ -17,3 +17,11 @@ export function parseEventJson(raw: string): EventData {
 export function getRewardImageUrl(imagePath: string): string {
   return `https://api.minaryganar.com/assets/${imagePath}`
 }
+
+// reward_summary é dado pessoal do jogador que gerou o JSON — nunca deve ser
+// persistido. Usado antes de salvar no localStorage.
+export function stripRewardSummary(raw: string): string {
+  const obj = JSON.parse(raw) as Record<string, unknown>
+  delete obj.reward_summary
+  return JSON.stringify(obj)
+}

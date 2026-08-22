@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { parseEventJson, getRewardImageUrl } from '../utils/parseEventJson'
+import { parseEventJson, getRewardImageUrl, stripRewardSummary } from '../utils/parseEventJson'
 import { calculateRecommendedMultiplier } from '../utils/calculateEventProfitability'
 import type { EventData } from '../types/event'
 import Card from '../components/Card'
@@ -73,7 +73,7 @@ export default function Eventos() {
     try {
       const parsed = parseEventJson(rawInput)
       setEvent(parsed)
-      localStorage.setItem(STORAGE_KEY, rawInput)
+      localStorage.setItem(STORAGE_KEY, stripRewardSummary(rawInput))
     } catch (err) {
       setParseError(err instanceof Error ? err.message : String(err))
     }
