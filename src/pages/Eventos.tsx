@@ -110,12 +110,7 @@ export default function Eventos() {
           </div>
 
           <Card title="Recomendação">
-            <p className="text-xs text-slate-500">
-              Fórmula reimplementada por conta própria a partir de comportamento
-              observado publicamente, só para cálculo pessoal — não é código de
-              terceiros.
-            </p>
-            <div className="mt-3 space-y-2">
+            <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-slate-400">Valor Total</span>
                 <span className="font-semibold text-slate-200">
@@ -160,10 +155,6 @@ export default function Eventos() {
               <div className="flex items-center justify-between text-sm">
                 <span className="text-slate-400">Duração do multiplicador</span>
                 <span className="text-slate-200">{multiplierHours}h</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-400">Desconto padrão</span>
-                <span className="text-slate-200">{event.default_discount_percent}%</span>
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-slate-400">Dificuldade do jogo</span>
@@ -281,6 +272,7 @@ export default function Eventos() {
                   <tr className="sticky top-0 border-b border-slate-800 bg-slate-900 text-xs uppercase text-slate-400">
                     <th className="py-2 pr-3 font-medium"></th>
                     <th className="py-2 pr-3 font-medium">Nível</th>
+                    <th className="py-2 pr-3 font-medium">Total</th>
                     <th className="py-2 pr-3 font-medium">Pontos</th>
                     <th className="py-2 pr-3 font-medium">Nome</th>
                     <th className="py-2 pr-3 font-medium">Valor</th>
@@ -308,6 +300,9 @@ export default function Eventos() {
                         </td>
                         <td className="py-2 pr-3 text-slate-300">
                           {reward.required_level}
+                        </td>
+                        <td className="py-2 pr-3 text-slate-300">
+                          {reward.required_xp.toLocaleString('en-US')}
                         </td>
                         <td className="py-2 pr-3 text-slate-300">
                           {reward.level_xp.toLocaleString('en-US')}
