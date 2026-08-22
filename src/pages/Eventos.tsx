@@ -91,6 +91,9 @@ export default function Eventos() {
     <div>
       <h1 className="text-2xl font-semibold text-white">Eventos</h1>
 
+      {/* Coluna esquerda não encolhe (conteúdo ~830px); abaixo de ~942px de
+          altura de viewport, a página rola normalmente — comportamento
+          aceito, não é bug. */}
       <div className="mt-4 grid grid-cols-1 items-stretch gap-4 lg:grid-cols-[320px_1fr] lg:h-[calc(100vh-112px)] lg:grid-rows-[minmax(0,1fr)]">
         <div className="space-y-4 lg:sticky lg:top-8 lg:h-fit">
           {event.cover_image_path && (
@@ -272,11 +275,11 @@ export default function Eventos() {
                     <th className="py-2 pr-3 font-medium">Nível</th>
                     <th className="py-2 pr-3 font-medium">Total</th>
                     <th className="py-2 pr-3 font-medium">Pontos</th>
-                    <th className="py-2 pr-3 font-medium">Jogos</th>
                     <th className="py-2 pr-3 font-medium">Nome</th>
                     <th className="py-2 pr-3 font-medium">Valor</th>
                     <th className="py-2 pr-3 font-medium">Caixas</th>
                     <th className="py-2 pr-3 font-medium">Mercado</th>
+                    <th className="py-2 pr-3 font-medium">Jogos</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -316,11 +319,11 @@ export default function Eventos() {
                         <td className="py-2 pr-3 text-slate-300">
                           {reward.level_xp.toLocaleString('en-US')}
                         </td>
-                        <td className="py-2 pr-3 text-slate-300">{games ?? '--'}</td>
                         <td className="py-2 pr-3 text-slate-200">{reward.name}</td>
                         <td className="py-2 pr-3 text-slate-200">{reward.value_text}</td>
                         <td className="py-2 pr-3 text-slate-300">{boxes ?? '--'}</td>
                         <td className="py-2 pr-3 text-slate-300">{marketRlt ?? '--'}</td>
+                        <td className="py-2 pr-3 text-slate-300">{games ?? '--'}</td>
                       </tr>
                     )
                   })}
