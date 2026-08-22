@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import SortDropdown, { type SortDropdownOption } from '../components/SortDropdown'
 
 interface Miner {
   id: string
@@ -24,6 +25,17 @@ interface MinersData {
 
 const PAGE_SIZE = 24
 
+type SortOption = 'recentes' | 'antigos' | 'poder_desc' | 'poder_asc' | 'bonus_desc' | 'bonus_asc'
+
+const SORT_OPTIONS: SortDropdownOption<SortOption>[] = [
+  { value: 'recentes', label: 'RECENTES' },
+  { value: 'antigos', label: 'ANTIGOS' },
+  { value: 'poder_desc', label: 'PODER ↓' },
+  { value: 'poder_asc', label: 'PODER ↑' },
+  { value: 'bonus_desc', label: 'BÔNUS ↓' },
+  { value: 'bonus_asc', label: 'BÔNUS ↑' },
+]
+
 function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
   return (
     <span
@@ -41,7 +53,7 @@ export default function Mineradores() {
   const [data, setData] = useState<MinersData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const [recentFirst, setRecentFirst] = useState(false)
+  const [sortOption, setSortOption] = useState<SortOption>('recentes')
   const [page, setPage] = useState(1)
 
   useEffect(() => {
@@ -64,24 +76,38 @@ export default function Mineradores() {
     }
   }, [])
 
-  // Não temos data de lançamento no miners.json (a API pública não expõe
-  // isso na lista) -- usamos a ordem original do array como proxy de "mais
-  // recente primeiro" via reverse(). Não é um critério real de data, só a
-  // ordem em que a API retornou os itens.
-  const orderedMiners = useMemo(() => {
-    if (!data) return []
-    return recentFirst ? [...data.miners].reverse() : data.miners
-  }, [data, recentFirst])
-
   const filteredMiners = useMemo(() => {
+    if (!data) return []
     const term = search.trim().toLowerCase()
-    if (!term) return orderedMiners
-    return orderedMiners.filter((m) => m.name.toLowerCase().includes(term))
-  }, [orderedMiners, search])
+    if (!term) return data.miners
+    return data.miners.filter((m) => m.name.toLowerCase().includes(term))
+  }, [data, search])
 
-  const totalPages = Math.max(1, Math.ceil(filteredMiners.length / PAGE_SIZE))
+  // Não temos data de lançamento no miners.json (a API pública não expõe
+  // isso na lista) -- RECENTES/ANTIGOS usam a ordem original do array (e o
+  // reverse dela) como proxy de "mais novo primeiro". Não é um critério
+  // real de data, só a ordem em que a API retornou os itens.
+  const sortedMiners = useMemo(() => {
+    switch (sortOption) {
+      case 'antigos':
+        return [...filteredMiners].reverse()
+      case 'poder_desc':
+        return [...filteredMiners].sort((a, b) => b.power - a.power)
+      case 'poder_asc':
+        return [...filteredMiners].sort((a, b) => a.power - b.power)
+      case 'bonus_desc':
+        return [...filteredMiners].sort((a, b) => b.bonus - a.bonus)
+      case 'bonus_asc':
+        return [...filteredMiners].sort((a, b) => a.bonus - b.bonus)
+      case 'recentes':
+      default:
+        return filteredMiners
+    }
+  }, [filteredMiners, sortOption])
+
+  const totalPages = Math.max(1, Math.ceil(sortedMiners.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
-  const pageMiners = filteredMiners.slice(
+  const pageMiners = sortedMiners.slice(
     (currentPage - 1) * PAGE_SIZE,
     currentPage * PAGE_SIZE,
   )
@@ -91,8 +117,8 @@ export default function Mineradores() {
     setPage(1)
   }
 
-  function toggleRecent() {
-    setRecentFirst((prev) => !prev)
+  function handleSortChange(value: SortOption) {
+    setSortOption(value)
     setPage(1)
   }
 
@@ -144,16 +170,7 @@ export default function Mineradores() {
           </div>
         </div>
 
-        <button
-          onClick={toggleRecent}
-          className={`rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
-            recentFirst
-              ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300'
-              : 'border-slate-700 bg-slate-800 text-slate-300 hover:text-white'
-          }`}
-        >
-          Recentes
-        </button>
+        <SortDropdown options={SORT_OPTIONS} value={sortOption} onChange={handleSortChange} />
       </div>
 
       <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
