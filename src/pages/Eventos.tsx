@@ -76,7 +76,7 @@ function RewardImage({
   const [failed, setFailed] = useState(false)
 
   return (
-    <div className="relative h-10 w-10 shrink-0">
+    <div className="relative z-0 h-10 w-10 shrink-0">
       {failed ? (
         <div className="flex h-10 w-10 items-center justify-center rounded-md bg-slate-800 text-slate-600">
           ?
@@ -356,11 +356,12 @@ function EventosContent({ event }: { event: EventData }) {
           >
             <div className="flex-1 min-h-0 overflow-y-auto">
               <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="sticky top-0 border-b border-slate-800 bg-slate-900 text-xs uppercase text-slate-400">
+                <thead className="sticky top-0 z-10 bg-slate-900">
+                  <tr className="border-b border-slate-800 text-xs uppercase text-slate-400">
                     <th className="py-2 pr-3 font-medium">Nível</th>
                     <th className="py-2 pr-3 font-medium">Total</th>
                     <th className="py-2 pr-3 font-medium">Pontos</th>
+                    <th className="py-2 pr-3 font-medium"></th>
                     <th className="py-2 pr-3 font-medium">Nome</th>
                     <th className="py-2 pr-3 font-medium">Valor</th>
                     <th className="py-2 pr-3 font-medium">Caixas</th>
@@ -404,17 +405,15 @@ function EventosContent({ event }: { event: EventData }) {
                         <td className="py-2 pr-3 text-slate-300">
                           {reward.level_xp.toLocaleString('en-US')}
                         </td>
-                        <td className="py-2 pr-3 text-slate-200">
-                          <div className="flex items-center gap-2">
-                            <RewardImage
-                              imagePath={reward.image_path}
-                              name={reward.name}
-                              mergeLevel={mergeLevel}
-                              sellable={reward.sellable}
-                            />
-                            <span>{reward.name}</span>
-                          </div>
+                        <td className="py-2 pr-3">
+                          <RewardImage
+                            imagePath={reward.image_path}
+                            name={reward.name}
+                            mergeLevel={mergeLevel}
+                            sellable={reward.sellable}
+                          />
                         </td>
+                        <td className="py-2 pr-3 text-slate-200">{reward.name}</td>
                         <td className="py-2 pr-3 text-slate-200">{reward.value_text}</td>
                         <td className="py-2 pr-3 text-slate-300">{boxes ?? '--'}</td>
                         <td className="py-2 pr-3 text-slate-300">{marketRlt ?? '--'}</td>
