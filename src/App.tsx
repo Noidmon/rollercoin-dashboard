@@ -9,6 +9,7 @@ import Merges from './pages/Merges'
 import Hamsters from './pages/Hamsters'
 import Eventos from './pages/Eventos'
 import Simulador from './pages/Simulador'
+import Admin from './pages/Admin'
 
 function App() {
   return (
@@ -23,6 +24,7 @@ function App() {
             <Route path="/hamsters" element={<Hamsters />} />
             <Route path="/eventos" element={<Eventos />} />
             <Route path="/simulador" element={<Simulador />} />
+            <Route path="/admin" element={<Admin />} />
           </Routes>
         </Layout>
       </NetworkDataProvider>

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { CURRENT_EVENT } from '../data/currentEvent'
 import { getRewardImageUrl } from '../utils/parseEventJson'
 import {
@@ -7,6 +7,7 @@ import {
   getTaskXpReward,
 } from '../utils/calculateEventProfitability'
 import Card from '../components/Card'
+import type { EventData } from '../types/event'
 
 const DISCOUNT_OPTIONS = [0, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60]
 const BOX_PRICE_OPTIONS = [1.99, 3.99, 11.99, 29.99]
@@ -45,6 +46,16 @@ function formatNumber(value: number, maximumFractionDigits = 2): string {
     : '--'
 }
 
+function looksLikeEventData(value: unknown): value is EventData {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof (value as EventData).name === 'string' &&
+    Array.isArray((value as EventData).rewards) &&
+    Array.isArray((value as EventData).tasks)
+  )
+}
+
 function RewardImage({ imagePath, name }: { imagePath: string; name: string }) {
   const [failed, setFailed] = useState(false)
 
@@ -68,7 +79,53 @@ function RewardImage({ imagePath, name }: { imagePath: string; name: string }) {
 }
 
 export default function Eventos() {
-  const event = CURRENT_EVENT
+  const [event, setEvent] = useState<EventData | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadEvent() {
+      try {
+        const response = await fetch(
+          `${import.meta.env.VITE_PROXY_URL}/api/progression-data/current`,
+        )
+        if (response.ok) {
+          const data = await response.json()
+          if (looksLikeEventData(data)) {
+            if (!cancelled) {
+              setEvent(data)
+            }
+            return
+          }
+        }
+      } catch {
+        // erro de rede -- cai no fallback abaixo
+      }
+
+      if (!cancelled) {
+        setEvent(CURRENT_EVENT)
+      }
+    }
+
+    loadEvent()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  if (!event) {
+    return (
+      <div>
+        <h1 className="text-2xl font-semibold text-white">Eventos</h1>
+        <p className="mt-4 text-sm text-slate-400">Carregando evento...</p>
+      </div>
+    )
+  }
+
+  return <EventosContent event={event} />
+}
+
+function EventosContent({ event }: { event: EventData }) {
   const recommendation = calculateRecommendedMultiplier(event)
   const rewardSummary = calculateEventRewardSummary(event)
   const multiplierHours = event.multiplier_ttl_ms / 3_600_000

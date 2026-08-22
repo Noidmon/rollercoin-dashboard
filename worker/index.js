@@ -1,16 +1,118 @@
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+}
+
+const JSON_HEADERS = {
+  'Content-Type': 'application/json',
+  ...CORS_HEADERS,
+}
+
+const REQUIRED_EVENT_FIELDS = [
+  'name',
+  'slug',
+  'rewards',
+  'tasks',
+  'multiplier_exchange_rlt',
+  'end_date',
+]
+
+function validateEvent(event) {
+  const missing = []
+
+  for (const field of REQUIRED_EVENT_FIELDS) {
+    if (!(field in event) || event[field] === null || event[field] === undefined) {
+      missing.push(field)
+    }
+  }
+
+  if ('rewards' in event && !(Array.isArray(event.rewards) && event.rewards.length > 0)) {
+    missing.push('rewards')
+  }
+
+  if ('tasks' in event && !Array.isArray(event.tasks)) {
+    missing.push('tasks')
+  }
+
+  return [...new Set(missing)]
+}
+
+async function handleGetCurrentEvent(env) {
+  const stored = await env.EVENTS_KV.get('current')
+
+  if (stored === null) {
+    return new Response(JSON.stringify({ error: 'no_event_configured' }), {
+      status: 404,
+      headers: JSON_HEADERS,
+    })
+  }
+
+  return new Response(stored, { status: 200, headers: JSON_HEADERS })
+}
+
+async function handlePostCurrentEvent(request, env) {
+  const body = await request.json().catch(() => null)
+
+  if (!body || typeof body.password !== 'string') {
+    return new Response(JSON.stringify({ error: 'unauthorized' }), {
+      status: 401,
+      headers: JSON_HEADERS,
+    })
+  }
+
+  if (body.password !== env.ADMIN_PASSWORD) {
+    return new Response(JSON.stringify({ error: 'unauthorized' }), {
+      status: 401,
+      headers: JSON_HEADERS,
+    })
+  }
+
+  const event = body.event
+  if (!event || typeof event !== 'object') {
+    return new Response(
+      JSON.stringify({ error: 'invalid_event_data', missing: REQUIRED_EVENT_FIELDS }),
+      { status: 400, headers: JSON_HEADERS },
+    )
+  }
+
+  const missing = validateEvent(event)
+  if (missing.length > 0) {
+    return new Response(JSON.stringify({ error: 'invalid_event_data', missing }), {
+      status: 400,
+      headers: JSON_HEADERS,
+    })
+  }
+
+  await env.EVENTS_KV.put('current', JSON.stringify(event))
+
+  return new Response(JSON.stringify({ success: true }), {
+    status: 200,
+    headers: JSON_HEADERS,
+  })
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: CORS_HEADERS })
     }
 
     const url = new URL(request.url)
     const path = url.pathname.replace(/^\/+/, '')
+
+    if (path === 'api/progression-data/current') {
+      if (request.method === 'GET') {
+        return handleGetCurrentEvent(env)
+      }
+      if (request.method === 'POST') {
+        return handlePostCurrentEvent(request, env)
+      }
+      return new Response(JSON.stringify({ error: 'method_not_allowed' }), {
+        status: 405,
+        headers: JSON_HEADERS,
+      })
+    }
 
     if (path.startsWith('img/')) {
       const targetUrl = `https://static.rollercoin.com/static/${path}`
