@@ -199,7 +199,7 @@ export default function Eventos() {
           </Card>
         </div>
 
-        <div className="flex h-full flex-col gap-4">
+        <div className="flex h-full min-h-0 flex-col gap-4">
           <Card title="Calculadora de Recompensas">
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
               <div>
