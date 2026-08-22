@@ -1,36 +1,46 @@
 // Constantes e fórmula reimplementadas por conta própria a partir de comportamento
 // observado (RC Calculator, de Ariel Ruiz), só para cálculo pessoal — nenhum
 // código-fonte de terceiros foi copiado ou redistribuído aqui.
-import type { EventReward } from './parseEventData'
+import type { EventData, EventReward } from '../types/event'
 
-export interface EventDifficulty {
-  baseMultiplier: number // ex: 1, do campo "Multiplicador: Xx cada 1 RLT"
-  maxMultiplier: number // ex: 1000, do dropdown de multiplicador disponível
-}
+const RLT_PER_PH_FOR_MINER_REWARD = 0.384
+const RLT_PER_RST = 1 / 400
+// Constante da plataforma hoje (confirmado pelo usuário). A RollerCoin pode mudar
+// isso no futuro — se o multiplicador máximo real disponível mudar, atualizar aqui.
+const KNOWN_MAX_MULTIPLIER = 1000
 
 export interface RecommendedMultiplier {
+  totalValue: number
   recommended: number
   rltToBuy: number
   ratio: number
   score: number
 }
 
-const RLT_PER_PH_FOR_MINER_REWARD = 0.384
-const RLT_PER_RST = 1 / 400
+function classifyRewardValue(reward: EventReward): {
+  type: 'money' | 'miner' | 'excluded'
+  rltValue: number
+} {
+  if (reward.reference_type === 'miner' || reward.reference_type === 'merge') {
+    const match = reward.value_text.match(/([\d\s]+)\s*Gh\/s/)
+    if (match) {
+      const powerGhS = parseFloat(match[1].replace(/\s/g, ''))
+      const powerPhS = powerGhS / 1e6
+      if (powerPhS >= 1) return { type: 'miner', rltValue: powerPhS * RLT_PER_PH_FOR_MINER_REWARD }
+    }
+    return { type: 'excluded', rltValue: 0 }
+  }
+  if (reward.reference_type === 'special') {
+    const rstMatch = reward.value_text.match(/^(\d+)\s*RST$/)
+    if (rstMatch) return { type: 'money', rltValue: parseFloat(rstMatch[1]) * RLT_PER_RST }
+    // "Bonus Power" com formato "X Gh/s (Y d)" -- tem parênteses de duração, é temporário, exclui
+    return { type: 'excluded', rltValue: 0 }
+  }
+  return { type: 'excluded', rltValue: 0 } // item, rack
+}
 
 export function calculateEventTotalValue(rewards: EventReward[]): number {
-  let total = 0
-  for (const r of rewards) {
-    if (r.rewardType === 'money') {
-      if (r.currency === 'RLT') total += r.amount ?? 0
-      else if (r.currency === 'RST') total += (r.amount ?? 0) * RLT_PER_RST
-    } else if (r.rewardType === 'miner') {
-      const powerPhS = (r.powerGhS ?? 0) / 1e6 // Gh/s -> Ph/s
-      if (powerPhS >= 1) total += powerPhS * RLT_PER_PH_FOR_MINER_REWARD
-    }
-    // power_temp e other: não somam nada, de propósito
-  }
-  return total
+  return rewards.reduce((sum, r) => sum + classifyRewardValue(r).rltValue, 0)
 }
 
 function scoreFromRatio(u: number): number {
@@ -59,16 +69,15 @@ function scoreFromRatio(u: number): number {
   return 0
 }
 
-export function calculateRecommendedMultiplier(
-  totalValue: number,
-  difficulty: EventDifficulty,
-): RecommendedMultiplier {
-  const target = totalValue * 0.27 * difficulty.baseMultiplier + 1
-  const availableMultipliers = Array.from({ length: difficulty.maxMultiplier }, (_, i) => i + 1)
+export function calculateRecommendedMultiplier(event: EventData): RecommendedMultiplier {
+  const totalValue = calculateEventTotalValue(event.rewards)
+  const baseMultiplier = parseFloat(event.multiplier_exchange_rlt)
+  const target = totalValue * 0.27 * baseMultiplier + 1
+  const availableMultipliers = Array.from({ length: KNOWN_MAX_MULTIPLIER }, (_, i) => i + 1)
   const recommended = availableMultipliers.reduce((closest, curr) =>
     Math.abs(curr - target) < Math.abs(closest - target) ? curr : closest,
   )
-  const rltToBuy = Math.floor((recommended - 1) / difficulty.baseMultiplier)
+  const rltToBuy = Math.floor((recommended - 1) / baseMultiplier)
   const ratio = rltToBuy / totalValue
-  return { recommended, rltToBuy, ratio, score: scoreFromRatio(ratio) }
+  return { totalValue, recommended, rltToBuy, ratio, score: scoreFromRatio(ratio) }
 }
