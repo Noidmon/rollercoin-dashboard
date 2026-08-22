@@ -6,6 +6,7 @@ const navItems = [
   { label: 'Dashboard', path: '/dashboard' },
   { label: 'Calculadora', path: '/calculadora' },
   { label: 'Merges', path: '/merges' },
+  { label: 'Mineradores', path: '/mineradores' },
   { label: 'Hamsters', path: '/hamsters' },
   { label: 'Eventos', path: '/eventos' },
   { label: 'Simulador', path: '/simulador' },
