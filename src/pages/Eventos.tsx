@@ -138,7 +138,7 @@ function EventosContent({ event }: { event: EventData }) {
   const multiplierOptions = generateMultiplierOptions(recommendation.recommended)
 
   const [multiplier, setMultiplier] = useState(recommendation.recommended)
-  const [discount, setDiscount] = useState(event.default_discount_percent)
+  const [discount, setDiscount] = useState(event.default_discount_percent ?? 0)
   const [boxPrice, setBoxPrice] = useState(1.99)
 
   const rltToBuy = Math.floor((multiplier - 1) / baseMultiplier)

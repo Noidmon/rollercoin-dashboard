@@ -27,7 +27,7 @@ export interface EventData {
   end_date: string
   multiplier_exchange_rlt: string // ex: "1.0000" -- ESSE é o multiplicador base, direto do JSON
   multiplier_ttl_ms: number // duração do multiplicador em ms (172800000 = 48h)
-  default_discount_percent: number
+  default_discount_percent: number | null
   cover_image_path: string | null
   rewards: EventReward[]
   tasks: EventTask[]

@@ -9,6 +9,9 @@ const JSON_HEADERS = {
   ...CORS_HEADERS,
 }
 
+// default_discount_percent de propósito NÃO está nessa lista -- o jogo às
+// vezes manda null pra esse campo, e isso é aceito (ver normalização mais
+// abaixo, antes do put no KV).
 const REQUIRED_EVENT_FIELDS = [
   'name',
   'slug',
@@ -82,6 +85,12 @@ async function handlePostCurrentEvent(request, env) {
       status: 400,
       headers: JSON_HEADERS,
     })
+  }
+
+  // default_discount_percent não é obrigatório e às vezes vem null do jogo --
+  // normaliza pra 0 aqui pra ninguém rio abaixo (frontend) precisar tratar null.
+  if (event.default_discount_percent === null || event.default_discount_percent === undefined) {
+    event.default_discount_percent = 0
   }
 
   await env.EVENTS_KV.put('current', JSON.stringify(event))
