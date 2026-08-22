@@ -1,30 +1,46 @@
-// Parseia texto colado do marketplace do RollerCoin: uma sequência repetida
-// em grupos de 4 linhas por peça. O formato REAL (o que o usuário realmente
-// cola ao selecionar/copiar da tela do jogo) é texto puro, sem colchetes nem
-// links:
+// Parseia texto colado do marketplace do RollerCoin. O formato REAL (o que o
+// usuário cola ao selecionar/copiar da tela do jogo) tem uma linha "product"
+// opcional antes do nome (nem sempre presente -- não confiar nela) e linhas
+// em branco entre cada campo:
+//   product
 //   Common Hashboard
-//   Quantity: 2 878 690
+//
+//   Quantity: 2 878 568
+//
 //   From
+//
 //   0.021 RLT
-// Também aceita o formato com links markdown (caso apareça em algum
-// contexto), onde cada linha vem como [texto](url) -- extrai só o texto:
-//   [Nome da Peça](url)
-//   [Quantity: N](url)
-//   [From](url)
-//   [X RLT](url) ou [X.XX RLT](url)
-// Quantity e From são ignorados, só extraímos {nome, preçoRLT} de cada grupo.
+// Contagem fixa de linhas (4 ou 5) é frágil -- já quebrou duas vezes porque
+// a presença da linha "product" e das linhas em branco varia. Em vez disso,
+// ancora em "From" (linha fixa e sempre presente) e navega relativo a ela:
+// preço = 1 linha depois, quantidade = 1 linha antes (ignorada), nome = 2
+// linhas antes -- depois de remover linhas vazias, então funciona tenha ou
+// não a linha "product", e independente de quantas linhas em branco existam.
+//
+// Também aceita o formato antigo com links markdown, onde cada linha vem
+// como [texto](url) -- extrai só o texto antes de aplicar a mesma lógica.
 
 export interface ParsedPartPrice {
   name: string
   priceRLT: number
 }
 
+export interface ParseMarketplaceResult {
+  prices: ParsedPartPrice[]
+  skippedCount: number
+}
+
 const MARKDOWN_LINK_LINE_PATTERN = /^\[(.*)\]\(.*\)$/
-const PRICE_PATTERN = /^([\d.]+)\s*RLT$/i
+const FROM_PATTERN = /^from$/i
+const PRICE_PATTERN = /^([\d.,]+)\s*RLT$/i
+
+const RARITIES = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary']
+const TYPES = ['Fan', 'Wire', 'Hashboard']
+const PART_NAME_PATTERN = new RegExp(`^(${RARITIES.join('|')}) (${TYPES.join('|')})$`, 'i')
 
 // \s no JS já cobre espaço não-quebrável (U+00A0), que vem junto às vezes
 // quando o texto é copiado de uma página web -- sem essa normalização,
-// "Epic Fan" (visualmente idêntico a "Epic Fan") não bate com a chave
+// "Epic Fan" (visualmente idêntico a "Epic Fan") não bate com a chave
 // gerada por partPriceKey() na hora de buscar o preço, e o preço colado
 // silenciosamente nunca é aplicado.
 export function normalizePartName(name: string): string {
@@ -36,25 +52,45 @@ function extractLineValue(line: string): string {
   return normalizePartName(match ? match[1] : line)
 }
 
-export function parseMarketplacePaste(raw: string): ParsedPartPrice[] {
+export function parseMarketplacePaste(raw: string): ParseMarketplaceResult {
   const lines = raw
     .split('\n')
     .map(extractLineValue)
     .filter((line) => line.length > 0)
 
-  const results: ParsedPartPrice[] = []
+  const prices: ParsedPartPrice[] = []
+  let skippedCount = 0
 
-  for (let i = 0; i + 3 < lines.length; i += 4) {
-    const name = lines[i]
-    const priceText = lines[i + 3]
-    const priceMatch = priceText.match(PRICE_PATTERN)
-    if (!name || !priceMatch) continue
+  for (let i = 0; i < lines.length; i++) {
+    if (!FROM_PATTERN.test(lines[i])) continue
 
-    const priceRLT = Number(priceMatch[1])
-    if (Number.isNaN(priceRLT)) continue
+    const priceLine = lines[i + 1]
+    const nameLine = lines[i - 2]
 
-    results.push({ name, priceRLT })
+    if (!priceLine || !nameLine) {
+      skippedCount++
+      continue
+    }
+
+    const priceMatch = priceLine.match(PRICE_PATTERN)
+    if (!priceMatch) {
+      skippedCount++
+      continue
+    }
+
+    if (!PART_NAME_PATTERN.test(nameLine)) {
+      skippedCount++
+      continue
+    }
+
+    const priceRLT = Number(priceMatch[1].replace(',', '.'))
+    if (Number.isNaN(priceRLT)) {
+      skippedCount++
+      continue
+    }
+
+    prices.push({ name: nameLine, priceRLT })
   }
 
-  return results
+  return { prices, skippedCount }
 }

@@ -70,14 +70,16 @@ function PartsCell({ parts }: { parts: ActivePart[] }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       {parts.map((p) => (
-        <span key={p.type} className="flex items-center gap-1">
+        <div key={p.type} className="relative h-8 w-8 shrink-0">
           <img
             src={resolveAssetUrl(partImagePath(p.type, p.rarity))}
             alt={`${p.rarity} ${p.type}`}
-            className="h-5 w-5 object-contain"
+            className="h-8 w-8 object-contain"
           />
-          <span className="text-slate-200">x{p.count}</span>
-        </span>
+          <span className="absolute -bottom-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-black px-1 text-[9px] font-bold leading-none text-white">
+            x{p.count}
+          </span>
+        </div>
       ))}
     </div>
   )
@@ -180,7 +182,7 @@ export default function MineradorDetalhe() {
 
   function handleSavePastedPrices() {
     if (!pasteText.trim()) return
-    const parsed = parseMarketplacePaste(pasteText)
+    const { prices: parsed, skippedCount } = parseMarketplacePaste(pasteText)
     if (parsed.length === 0) {
       setPasteMessage('Nenhum preço detectado no texto colado.')
       return
@@ -189,7 +191,11 @@ export default function MineradorDetalhe() {
     for (const p of parsed) priceMap[p.name] = p.priceRLT
     const merged = mergeStoredPartPrices(priceMap)
     setPartPrices(merged)
-    setPasteMessage(`${parsed.length} preços detectados e salvos`)
+    setPasteMessage(
+      skippedCount > 0
+        ? `${parsed.length} preços detectados e salvos (${skippedCount} ignorados)`
+        : `${parsed.length} preços detectados e salvos`,
+    )
   }
 
   if (loadError) {
@@ -421,19 +427,21 @@ export default function MineradorDetalhe() {
             </Card>
           ) : (
             <Card title="Custos de Merge">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
+              <div className="overflow-x-auto rounded-md">
+                <table className="w-full border-separate border-spacing-0 text-left text-sm">
                   <thead>
-                    <tr className="border-b border-slate-800 text-xs uppercase text-slate-400">
-                      <th className="py-2 pr-3 font-medium">LVL</th>
-                      <th className="py-2 pr-3 font-medium">Peças</th>
-                      <th className="py-2 pr-3 font-medium">Custo de Todas as Peças</th>
-                      <th className="py-2 pr-3 font-medium">Taxa de Merge</th>
-                      <th className="py-2 pr-3 font-medium">Peças + Taxa</th>
-                      <th className="py-2 pr-3 font-medium">Poder</th>
-                      <th className="py-2 pr-3 font-medium">Bônus</th>
-                      <th className="py-2 pr-3 font-medium">Custo Final</th>
-                      <th className="py-2 pr-3 font-medium">Ratio Poder</th>
+                    <tr className="border-t-4 border-t-yellow-500 bg-slate-900 text-xs uppercase text-slate-300">
+                      <th className="border border-white/10 px-3 py-2 font-medium">LVL</th>
+                      <th className="border border-white/10 px-3 py-2 font-medium">Peças</th>
+                      <th className="border border-white/10 px-3 py-2 font-medium">
+                        Custo de Todas as Peças
+                      </th>
+                      <th className="border border-white/10 px-3 py-2 font-medium">Taxa de Merge</th>
+                      <th className="border border-white/10 px-3 py-2 font-medium">Peças + Taxa</th>
+                      <th className="border border-white/10 px-3 py-2 font-medium">Poder</th>
+                      <th className="border border-white/10 px-3 py-2 font-medium">Bônus</th>
+                      <th className="border border-white/10 px-3 py-2 font-medium">Custo Final</th>
+                      <th className="border border-white/10 px-3 py-2 font-medium">Ratio Poder</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -441,32 +449,63 @@ export default function MineradorDetalhe() {
                       <tr
                         key={row.merge.mergeId}
                         onClick={() => setSelectedIndex(i)}
-                        style={{ backgroundColor: levelColorWithAlpha(row.merge.level, '73') }}
-                        className={`cursor-pointer border-b border-slate-950/40 ${
+                        className={`cursor-pointer ${
                           i === selectedIndex ? 'ring-2 ring-inset ring-white/70' : ''
                         }`}
                       >
-                        <td className="py-2 pr-3">
+                        <td
+                          className="border border-white/10 px-3 py-2"
+                          style={{ backgroundColor: levelColorWithAlpha(row.merge.level, 'E6') }}
+                        >
                           <LevelBadge level={row.merge.level} />
                         </td>
-                        <td className="py-2 pr-3">
+                        <td
+                          className="border border-white/10 px-3 py-2"
+                          style={{ backgroundColor: levelColorWithAlpha(row.merge.level, 'E6') }}
+                        >
                           <PartsCell parts={row.activeParts} />
                         </td>
-                        <td className="py-2 pr-3 text-slate-100">{formatRLT(row.piecesCost)} RLT</td>
-                        <td className="py-2 pr-3 text-slate-100">
+                        <td
+                          className="border border-white/10 px-3 py-2"
+                          style={{ backgroundColor: levelColorWithAlpha(row.merge.level, 'E6') }}
+                        >
+                          <span className="inline-block whitespace-nowrap rounded-full bg-slate-950/55 px-2 py-1 text-xs font-semibold text-white">
+                            {formatRLT(row.piecesCost)} RLT
+                          </span>
+                        </td>
+                        <td
+                          className="border border-white/10 px-3 py-2 text-slate-100"
+                          style={{ backgroundColor: levelColorWithAlpha(row.merge.level, 'E6') }}
+                        >
                           {formatRLT(row.mergeFeeCost)} RLT
                         </td>
-                        <td className="py-2 pr-3 text-slate-100">
+                        <td
+                          className="border border-white/10 px-3 py-2 text-slate-100"
+                          style={{ backgroundColor: levelColorWithAlpha(row.merge.level, 'E6') }}
+                        >
                           {formatRLT(row.piecesPlusFee)} RLT
                         </td>
-                        <td className="py-2 pr-3 text-slate-100">{formatPower(row.merge.power)}</td>
-                        <td className="py-2 pr-3 text-slate-100">{row.merge.bonus}%</td>
-                        <td className="py-2 pr-3 font-semibold text-white">
+                        <td
+                          className="border border-white/10 px-3 py-2 text-slate-100"
+                          style={{ backgroundColor: levelColorWithAlpha(row.merge.level, 'E6') }}
+                        >
+                          {formatPower(row.merge.power)}
+                        </td>
+                        <td
+                          className="border border-white/10 px-3 py-2 text-slate-100"
+                          style={{ backgroundColor: levelColorWithAlpha(row.merge.level, 'E6') }}
+                        >
+                          {row.merge.bonus}%
+                        </td>
+                        <td
+                          className="border border-white/10 px-3 py-2 font-semibold text-white"
+                          style={{ backgroundColor: levelColorWithAlpha(row.merge.level, 'E6') }}
+                        >
                           {formatRLT(row.finalCost)} RLT
                         </td>
                         <td
-                          className="py-2 pr-3 font-semibold text-white"
-                          style={{ backgroundColor: `${getRatioColor(row.ratioPower)}A0` }}
+                          className="border border-white/10 px-3 py-2 font-semibold text-white"
+                          style={{ backgroundColor: `${getRatioColor(row.ratioPower)}E6` }}
                         >
                           {formatRLT(row.ratioPower)} RLT
                         </td>
