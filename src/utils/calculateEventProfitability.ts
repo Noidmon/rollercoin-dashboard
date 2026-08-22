@@ -69,6 +69,59 @@ function scoreFromRatio(u: number): number {
   return 0
 }
 
+export interface EventRewardSummary {
+  minersPowerGhS: number
+  minersBonusPercent: number
+  temporaryPowerGhS: number
+  rst: number
+  rlt: number
+  seasonExp: number
+}
+
+// Calculado por nós a partir do array de recompensas do evento — não depende de
+// nenhum campo externo tipo reward_summary (que é dado pessoal do jogador e nem
+// existe no nosso currentEvent.ts).
+export function calculateEventRewardSummary(event: EventData): EventRewardSummary {
+  let minersPowerGhS = 0
+  let minersBonusPercent = 0
+  let temporaryPowerGhS = 0
+  let rst = 0
+  let rlt = 0
+  const seasonExp = 0
+
+  for (const r of event.rewards) {
+    if (r.reference_type === 'miner' || r.reference_type === 'merge') {
+      const powerMatch = r.value_text.match(/([\d\s]+)\s*Gh\/s/)
+      const bonusMatch = r.value_text.match(/\|\s*([\d.]+)%/)
+      if (powerMatch) minersPowerGhS += parseFloat(powerMatch[1].replace(/\s/g, ''))
+      if (bonusMatch) minersBonusPercent += parseFloat(bonusMatch[1])
+    } else if (r.reference_type === 'special') {
+      const rstMatch = r.value_text.match(/^(\d+)\s*RST$/)
+      const rltMatch = r.value_text.match(/^(\d+)\s*RLT$/)
+      const tempMatch = r.value_text.match(/([\d\s]+)\s*Gh\/s\s*\(/) // formato "X Gh/s (Yd)"
+      if (rstMatch) rst += parseFloat(rstMatch[1])
+      else if (rltMatch) rlt += parseFloat(rltMatch[1])
+      else if (tempMatch) temporaryPowerGhS += parseFloat(tempMatch[1].replace(/\s/g, ''))
+    }
+  }
+
+  return {
+    minersPowerGhS,
+    minersBonusPercent: Math.round(minersBonusPercent * 100) / 100,
+    temporaryPowerGhS,
+    rst,
+    rlt,
+    seasonExp,
+  }
+}
+
+export function getTaskXpReward(
+  tasks: EventData['tasks'],
+  type: EventData['tasks'][number]['type'],
+): number {
+  return tasks.find((t) => t.type === type)?.xp_reward ?? 0
+}
+
 export function calculateRecommendedMultiplier(event: EventData): RecommendedMultiplier {
   const totalValue = calculateEventTotalValue(event.rewards)
   const baseMultiplier = parseFloat(event.multiplier_exchange_rlt)
