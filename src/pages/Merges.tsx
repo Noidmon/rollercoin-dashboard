@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import Card from '../components/Card'
+import PartPricesPasteCard from '../components/PartPricesPasteCard'
 import SortDropdown, { type SortDropdownOption } from '../components/SortDropdown'
 import { formatPower } from '../utils/formatPower'
 import { parseMinersInventory } from '../utils/parseMinersInventory'
@@ -7,14 +8,7 @@ import { parsePartsInventory } from '../utils/parsePartsInventory'
 import { matchMinersInventory, type MatchedMinerEntry } from '../utils/matchMinersInventory'
 import type { MinerInventoryEntry } from '../utils/parseMinersInventory'
 import type { PartInventoryEntry } from '../utils/parsePartsInventory'
-import {
-  readMinersInventory,
-  readPartsInventory,
-  readRealForgeLevel,
-  writeMinersInventory,
-  writePartsInventory,
-  writeRealForgeLevel,
-} from '../utils/mergesStorage'
+import { clearLegacyInventoryKeys, readRealForgeLevel, writeRealForgeLevel } from '../utils/mergesStorage'
 import { readStoredPartPrices } from '../utils/partPriceStorage'
 import {
   buildOwnedByNameLevelMap,
@@ -371,16 +365,14 @@ export default function Merges() {
   const [partsPasteText, setPartsPasteText] = useState('')
   const [analyzeMessage, setAnalyzeMessage] = useState<string | null>(null)
 
-  // Estado persistente -- localStorage, sobrevive entre sessões
-  const [minersInventory, setMinersInventory] = useState<MatchedMinerEntry[]>(() =>
-    readMinersInventory(),
-  )
-  const [partsInventory, setPartsInventory] = useState<PartInventoryEntry[]>(() =>
-    readPartsInventory(),
-  )
+  // Inventário de mineradores e de peças NÃO persistem mais -- só em
+  // estado React (memória da sessão atual); o jogador cola de novo a cada
+  // visita. Nível da Forja e preço de peças continuam persistentes.
+  const [minersInventory, setMinersInventory] = useState<MatchedMinerEntry[]>([])
+  const [partsInventory, setPartsInventory] = useState<PartInventoryEntry[]>([])
   const [unrecognized, setUnrecognized] = useState<MinerInventoryEntry[]>([])
   const [realForgeLevel, setRealForgeLevel] = useState<number>(() => readRealForgeLevel())
-  const [partPrices] = useState<Record<string, number>>(() => readStoredPartPrices())
+  const [partPrices, setPartPrices] = useState<Record<string, number>>(() => readStoredPartPrices())
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ready')
   const [qualityFilter, setQualityFilter] = useState<QualityFilter>('all')
   const [reachFilter, setReachFilter] = useState<ReachFilter>('any')
@@ -424,6 +416,13 @@ export default function Merges() {
     }
   }, [])
 
+  // Limpeza única das chaves antigas de inventário (rc-miners-inventory/
+  // rc-parts-inventory) -- não persistem mais, então não tem por que
+  // deixar lixo de sessões anteriores acumulado.
+  useEffect(() => {
+    clearLegacyInventoryKeys()
+  }, [])
+
   function handleForgeLevelChange(level: number) {
     setRealForgeLevel(level)
     writeRealForgeLevel(level)
@@ -440,9 +439,7 @@ export default function Merges() {
     )
 
     setMinersInventory(matched)
-    writeMinersInventory(matched)
     setPartsInventory(parsedParts)
-    writePartsInventory(parsedParts)
     setUnrecognized(newUnrecognized)
 
     setAnalyzeMessage(
@@ -678,6 +675,8 @@ export default function Merges() {
             Analisar Inventário
           </button>
           {analyzeMessage && <p className="text-xs text-emerald-400">{analyzeMessage}</p>}
+
+          <PartPricesPasteCard onPricesSaved={setPartPrices} />
         </div>
 
         <div className="space-y-4">

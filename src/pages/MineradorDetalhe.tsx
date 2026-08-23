@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Card from '../components/Card'
 import MinerStatusIcons from '../components/MinerStatusIcons'
+import PartPricesPasteCard from '../components/PartPricesPasteCard'
 import { formatPower } from '../utils/formatPower'
-import { parseMarketplacePaste } from '../utils/parseMarketplacePaste'
-import { mergeStoredPartPrices, readStoredPartPrices } from '../utils/partPriceStorage'
+import { readStoredPartPrices } from '../utils/partPriceStorage'
 import { resolveAssetUrl } from '../utils/resolveAssetUrl'
 import {
   FORGE_LEVELS,
@@ -91,8 +91,6 @@ export default function MineradorDetalhe() {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [priceRLT, setPriceRLT] = useState(0)
   const [priceUSD, setPriceUSD] = useState(0)
-  const [pasteText, setPasteText] = useState('')
-  const [pasteMessage, setPasteMessage] = useState<string | null>(null)
 
   // Estado persistente -- localStorage, sobrevive entre páginas/sessões
   const [partPrices, setPartPrices] = useState<Record<string, number>>(() => readStoredPartPrices())
@@ -135,8 +133,6 @@ export default function MineradorDetalhe() {
     setSelectedIndex(0)
     setPriceRLT(0)
     setPriceUSD(0)
-    setPasteText('')
-    setPasteMessage(null)
   }, [slug])
 
   useEffect(() => {
@@ -172,24 +168,6 @@ export default function MineradorDetalhe() {
     if (!term) return []
     return minersData.miners.filter((m) => m.name.toLowerCase().includes(term)).slice(0, 8)
   }, [minersData, searchQuery])
-
-  function handleSavePastedPrices() {
-    if (!pasteText.trim()) return
-    const { prices: parsed, skippedCount } = parseMarketplacePaste(pasteText)
-    if (parsed.length === 0) {
-      setPasteMessage('Nenhum preço detectado no texto colado.')
-      return
-    }
-    const priceMap: Record<string, number> = {}
-    for (const p of parsed) priceMap[p.name] = p.priceRLT
-    const merged = mergeStoredPartPrices(priceMap)
-    setPartPrices(merged)
-    setPasteMessage(
-      skippedCount > 0
-        ? `${parsed.length} preços detectados e salvos (${skippedCount} ignorados)`
-        : `${parsed.length} preços detectados e salvos`,
-    )
-  }
 
   if (loadError) {
     return (
@@ -384,25 +362,7 @@ export default function MineradorDetalhe() {
             </a>
           </Card>
 
-          {/* Colar texto do marketplace */}
-          <Card title="Preço das Peças">
-            <label className="mb-1 block text-xs text-slate-400">Colar texto do marketplace</label>
-            <textarea
-              value={pasteText}
-              onChange={(e) => setPasteText(e.target.value)}
-              placeholder="Cole aqui"
-              rows={6}
-              className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-xs text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            <button
-              type="button"
-              onClick={handleSavePastedPrices}
-              className="mt-2 w-full rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500"
-            >
-              Salvar preços colados
-            </button>
-            {pasteMessage && <p className="mt-2 text-xs text-emerald-400">{pasteMessage}</p>}
-          </Card>
+          <PartPricesPasteCard onPricesSaved={setPartPrices} />
         </div>
 
         <div className="space-y-4">
