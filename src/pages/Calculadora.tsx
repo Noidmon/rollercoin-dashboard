@@ -9,6 +9,8 @@ import {
 import { calculateCoinEarnings, type CoinEarnings } from '../utils/calculateEarnings'
 import { BLOCK_TIME_SECONDS } from '../data/blockTimes'
 import { getLeagueInfo } from '../data/leagues'
+import { isWithdrawable } from '../data/withdrawable'
+import { WITHDRAWAL_MINIMUMS } from '../data/withdrawalMinimums'
 import Card from '../components/Card'
 import CurrencyIcon from '../components/CurrencyIcon'
 
@@ -42,6 +44,27 @@ function formatBlockTime(seconds: number): string {
   const minutes = Math.floor(seconds / 60)
   const remainingSeconds = seconds % 60
   return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`
+}
+
+// Formata uma duração em dias como "X dias Y horas" -- reaproveitável em
+// qualquer outro lugar do projeto que precise do mesmo formato.
+function formatDaysHours(days: number): string {
+  const totalHours = Math.round(days * 24)
+  const wholeDays = Math.floor(totalHours / 24)
+  const hours = totalHours % 24
+  return `${wholeDays} dias ${hours} horas`
+}
+
+// Tempo até acumular o saque mínimo da moeda, partindo de 0, com base no
+// ganho diário já calculado na tabela. null quando a moeda não é sacável ou
+// quando o ganho diário é praticamente zero (divisão por zero/infinito).
+function withdrawalTimeText(row: CoinRow): string {
+  if (!isWithdrawable(row.symbol)) return '—'
+  const minimum = WITHDRAWAL_MINIMUMS[row.symbol]
+  if (minimum === undefined) return '—'
+  if (row.dailyGain === null || row.dailyGain < 1e-12) return '—'
+  const daysNeeded = minimum / row.dailyGain
+  return formatDaysHours(daysNeeded)
 }
 
 function valueFor(row: CoinRow, column: SortColumn, mode: DisplayMode): number {
@@ -275,6 +298,9 @@ export default function Calculadora() {
                         Mensal (30d){' '}
                         {sortColumn === 'monthly' && (sortDirection === 'desc' ? '↓' : '↑')}
                       </th>
+                      <th className="whitespace-nowrap py-2 pr-3 font-medium">
+                        Tempo de Saque
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -303,6 +329,12 @@ export default function Calculadora() {
                           {displayMode === 'usd'
                             ? formatUSD(row.monthlyGainUSD)
                             : `${formatCoinAmount(row.monthlyGain)} ${row.symbol}`}
+                        </td>
+                        <td
+                          className="whitespace-nowrap py-2 pr-3 text-slate-300"
+                          title={!isWithdrawable(row.symbol) ? 'não sacável' : undefined}
+                        >
+                          {withdrawalTimeText(row)}
                         </td>
                       </tr>
                     ))}
