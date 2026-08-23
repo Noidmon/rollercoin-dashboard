@@ -36,6 +36,7 @@ import {
 } from '../utils/minerMergeCalculator'
 import { getDeepestConsumedRarity } from '../utils/partCrafting'
 import { resolveAssetUrl } from '../utils/resolveAssetUrl'
+import { usePlayer } from '../context/PlayerContext'
 import type { Miner, MinersData } from '../types/miner'
 
 function formatRLT(value: number): string {
@@ -228,6 +229,11 @@ function FullChain({
 }
 
 export default function Merges() {
+  // Mesmo contexto global usado no Dashboard/Calculadora/Simulador -- já
+  // busca profile+room-config pro nickname da sidebar, sem precisar de um
+  // fetch/input próprio aqui.
+  const { playerData, error: playerError } = usePlayer()
+
   const [minersData, setMinersData] = useState<MinersData | null>(null)
   const [craftingPrices, setCraftingPrices] = useState<CraftingPrices | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -317,17 +323,60 @@ export default function Merges() {
 
   const forgeDiscount = FORGE_LEVELS[realForgeLevel - 1]?.discount ?? 0
 
+  // Mineradores JÁ NA SALA (room-config) -- o inventário colado ("Meus
+  // Mineradores") só cobre o Storage, fora da sala, então a contagem real de
+  // cópias precisa somar os dois. room-config não indica o nível de merge
+  // de cada instância de forma direta e confiável (campo `level` usa uma
+  // numeração própria, sem correspondência fixa com miners.json -- 0 tanto
+  // pra base quanto pra outros casos dependendo do tipo), então casa cada
+  // minerador da sala pelo NOME+POWER reaproveitando matchMinersInventory
+  // (mesma tolerância de 0.5%), convertendo pro mesmo formato do parser de
+  // inventário colado.
+  const roomInventoryEntries = useMemo<MinerInventoryEntry[]>(() => {
+    const roomMiners = playerData?.roomConfig?.miners
+    if (!roomMiners) return []
+    return roomMiners
+      .filter((m): m is typeof m & { name: string } => !!m.name)
+      .map((m) => ({
+        name: m.name,
+        cells: 0,
+        powerValue: m.power,
+        bonusPercent: (m.bonus_percent ?? 0) / 100,
+        quantity: 1,
+        sellable: true,
+      }))
+  }, [playerData])
+
+  const roomMatchResult = useMemo(() => {
+    if (!minersData) return { matched: [], unrecognized: [] }
+    return matchMinersInventory(roomInventoryEntries, minersData.miners)
+  }, [roomInventoryEntries, minersData])
+
+  // Total de cópias usado em TODOS os cálculos (cards, Cadeia Completa,
+  // Alcance Real) = inventário colado + sala -- computeMergeNeeds já soma
+  // quantidades pelo mesmo par nome+nível, então basta concatenar as duas
+  // listas antes de passar pra ele (sem lógica de soma duplicada aqui).
+  const combinedMinersInventory = useMemo(
+    () => [...minersInventory, ...roomMatchResult.matched],
+    [minersInventory, roomMatchResult],
+  )
+
+  const allUnrecognized = useMemo(
+    () => [...unrecognized, ...roomMatchResult.unrecognized],
+    [unrecognized, roomMatchResult],
+  )
+
   const mergeNeeds = useMemo<MergeNeed[]>(() => {
     if (!minersData || !craftingPrices) return []
     return computeMergeNeeds(
-      minersInventory,
+      combinedMinersInventory,
       minersData.miners,
       partsInventory,
       forgeDiscount,
       partPrices,
       craftingPrices,
     )
-  }, [minersInventory, minersData, partsInventory, forgeDiscount, partPrices, craftingPrices])
+  }, [combinedMinersInventory, minersData, partsInventory, forgeDiscount, partPrices, craftingPrices])
 
   const statusCounts = useMemo(() => {
     const counts: Record<StatusFilter, number> = {
@@ -431,6 +480,21 @@ export default function Merges() {
               rows={8}
               className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-xs text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
+            {playerData?.roomConfig ? (
+              <p className="mt-1.5 text-[11px] text-slate-500">
+                Cópias consideram sala ({playerData.roomConfig.miners.length} mineradores) +
+                inventário colado.
+              </p>
+            ) : playerError ? (
+              <p className="mt-1.5 text-[11px] text-amber-500">
+                Não foi possível carregar a sala ({playerError}) -- usando só o inventário colado.
+              </p>
+            ) : (
+              <p className="mt-1.5 text-[11px] text-slate-500">
+                Cópias consideram sala + inventário colado (busque seu nickname na barra
+                lateral).
+              </p>
+            )}
           </Card>
 
           <Card title="Inventário de Peças">
@@ -682,17 +746,22 @@ export default function Merges() {
             </>
           )}
 
-          {unrecognized.length > 0 && (
-            <Card title={`Entradas não reconhecidas (${unrecognized.length})`}>
+          {allUnrecognized.length > 0 && (
+            <Card title={`Entradas não reconhecidas (${allUnrecognized.length})`}>
               <p className="mb-2 text-xs text-slate-400">
-                Essas entradas do inventário colado não bateram com nenhum minerador/nível
-                conhecido. Confira se o texto colado está completo.
+                Essas entradas (do inventário colado ou da sala) não bateram com nenhum
+                minerador/nível conhecido. Confira se o texto colado está completo.
               </p>
               <ul className="max-h-64 space-y-1 overflow-y-auto text-xs text-slate-300">
                 {unrecognized.map((entry, i) => (
-                  <li key={i}>
+                  <li key={`paste-${i}`}>
                     {entry.name} -- {formatPower(entry.powerValue)}, {entry.bonusPercent}% bônus,
-                    x{entry.quantity}
+                    x{entry.quantity} (inventário colado)
+                  </li>
+                ))}
+                {roomMatchResult.unrecognized.map((entry, i) => (
+                  <li key={`room-${i}`}>
+                    {entry.name} -- {formatPower(entry.powerValue)}, x{entry.quantity} (sala)
                   </li>
                 ))}
               </ul>
