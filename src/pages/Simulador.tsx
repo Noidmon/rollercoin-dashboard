@@ -4,6 +4,29 @@ import { calculateRoomPower, sumUniqueMinerBonusPercent } from '../utils/calcula
 import { getLeagueInfo } from '../data/leagues'
 import { formatPower } from '../utils/formatPower'
 import Card from '../components/Card'
+import RoomBackground from '../components/RoomBackground'
+
+// Preview temporário da Fase B (fundo visual da sala) -- só pra validação
+// visual das duas composições possíveis (Sala 0 vs Salas 1-3, que
+// compartilham a mesma decoração). A integração de verdade com racks/
+// mineradores reais da conta vem numa próxima etapa; remover este bloco
+// quando isso acontecer.
+function RoomBackgroundPreview() {
+  return (
+    <Card title="Fase B: Fundo da Sala (preview temporário)">
+      <div className="flex flex-wrap gap-4">
+        <div>
+          <p className="mb-2 text-xs text-slate-400">Sala 0</p>
+          <RoomBackground roomLevel={0} />
+        </div>
+        <div>
+          <p className="mb-2 text-xs text-slate-400">Salas 1-3 (idênticas)</p>
+          <RoomBackground roomLevel={1} />
+        </div>
+      </div>
+    </Card>
+  )
+}
 
 interface SimMinerRow {
   id: string
@@ -40,6 +63,9 @@ export default function Simulador() {
     return (
       <div>
         <h1 className="text-2xl font-semibold text-white">Simulador</h1>
+        <div className="mt-4">
+          <RoomBackgroundPreview />
+        </div>
         <p className="mt-4 text-sm text-slate-400">
           Digite um nickname no menu lateral para começar.
         </p>
@@ -115,6 +141,8 @@ export default function Simulador() {
       <h1 className="text-2xl font-semibold text-white">Simulador</h1>
 
       <div className="mt-4 space-y-4">
+        <RoomBackgroundPreview />
+
         <Card title="Poder Permanente Atual">
           <p className="text-2xl font-bold text-white">{formatPower(currentTotal)}</p>
           <p className="mt-1 text-xs text-slate-500">
