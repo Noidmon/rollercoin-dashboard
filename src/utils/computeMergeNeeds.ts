@@ -195,13 +195,21 @@ export function computeMergeNeeds(
     ownedByNameLevel.set(key, (ownedByNameLevel.get(key) ?? 0) + entry.quantity)
   }
 
-  // nível MÁXIMO possuído de cada minerador -- é a partir dele que o
-  // próximo merge seria feito
-  const maxLevelByName = new Map<string, number>()
+  // nível MÍNIMO possuído de cada minerador -- é a partir dele que o
+  // PRÓXIMO merge acionável deve ser calculado. Um jogador pode ter cópias
+  // em vários níveis ao mesmo tempo (ex: 2 em Rare, 1 em Epic, 1 em
+  // Legendary) -- usar o nível MÁXIMO possuído ignorava fusões já prontas
+  // em níveis mais baixos (bug real: só aparecia "Legendary -> Unreal
+  // 1/2", nunca o "Rare -> Epic 2/2" já pronto). Usar o mínimo resolve o
+  // elo mais fraco/gargalo mais cedo da cadeia primeiro, respeitando a
+  // ordem natural de progressão -- a Cadeia Completa expandida continua
+  // cobrindo os níveis mais altos depois, então nenhuma informação se
+  // perde, só a ordem de exibição do "próximo passo principal" muda.
+  const minLevelByName = new Map<string, number>()
   for (const entry of ownedEntries) {
-    const current = maxLevelByName.get(entry.name)
-    if (current === undefined || entry.matchedLevel > current) {
-      maxLevelByName.set(entry.name, entry.matchedLevel)
+    const current = minLevelByName.get(entry.name)
+    if (current === undefined || entry.matchedLevel < current) {
+      minLevelByName.set(entry.name, entry.matchedLevel)
     }
   }
 
@@ -209,7 +217,7 @@ export function computeMergeNeeds(
 
   const needs: MergeNeed[] = []
 
-  for (const [name, currentLevel] of maxLevelByName) {
+  for (const [name, currentLevel] of minLevelByName) {
     const miner = miners.find((m) => m.name === name)
     if (!miner || !miner.mergeable || miner.merges.length === 0) continue
 
