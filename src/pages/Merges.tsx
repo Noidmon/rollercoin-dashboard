@@ -538,6 +538,7 @@ export default function Merges() {
           miner,
           need.currentLevel,
           need.ownedAtCurrentLevel,
+          ownedByNameLevelMap,
           partsOwnedMap,
           forgeDiscount,
           partPrices,
@@ -546,7 +547,7 @@ export default function Merges() {
       )
     }
     return map
-  }, [mergeNeeds, minersById, partsOwnedMap, forgeDiscount, partPrices, craftingPrices])
+  }, [mergeNeeds, minersById, ownedByNameLevelMap, partsOwnedMap, forgeDiscount, partPrices, craftingPrices])
 
   const filteredMergeNeeds = useMemo(() => {
     const filtered = mergeNeeds.filter((need) => {

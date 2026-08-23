@@ -140,19 +140,26 @@ export interface ChainSimulation {
   leftoverCopies: number
 }
 
-// Simula subir a cadeia de merge de um minerador usando só as cópias que o
-// jogador já possui no nível atual -- reaproveita calculateMergeCostTable
-// (mesma fórmula recursiva de finalCost/ratioPower) e, pra cada passo,
-// deriva quantas cópias do próximo nível resultariam de mesclar as cópias
-// disponíveis em grupos de requiredPreviousCount (igual à conta já feita
-// internamente por finalCost, só que aplicada a CONTAGEM em vez de custo).
-// Uma vez que as cópias disponíveis zeram, ficam zeradas nos passos
-// seguintes (floor(0/N) = 0), o que automaticamente marca onde a cadeia
-// real para -- sem precisar de uma flag de "parou aqui".
+// Simula subir a cadeia de merge de um minerador usando as cópias que o
+// jogador já possui -- reaproveita calculateMergeCostTable (mesma fórmula
+// recursiva de finalCost/ratioPower) e, pra cada passo, deriva quantas
+// cópias do próximo nível resultariam de mesclar as cópias disponíveis em
+// grupos de requiredPreviousCount (igual à conta já feita internamente por
+// finalCost, só que aplicada a CONTAGEM em vez de custo).
+//
+// Em CADA nível alcançado, a quantidade disponível soma (cópias produzidas
+// pelos merges anteriores da própria simulação) + (cópias que o jogador JÁ
+// possuía originalmente naquele nível, via ownedByNameLevel -- sala +
+// colado) -- bug real corrigido aqui: antes só a cascata contava, então um
+// jogador com 2 Epic (produz 1 Legendary) E 1 Legendary já possuído
+// separadamente parava em "Epic -> Legendary (máximo)" mesmo tendo, na
+// prática, 1+1=2 Legendary -- o suficiente pra também fazer
+// Legendary -> Unreal.
 export function simulateMergeChain(
   miner: Miner,
   currentLevel: number,
   ownedAtCurrentLevel: number,
+  ownedByNameLevel: Map<string, number>,
   partsOwned: Map<string, number>,
   forgeDiscount: number,
   partPrices: Record<string, number>,
@@ -165,8 +172,19 @@ export function simulateMergeChain(
     fromLevel: currentLevel,
   })
 
-  let copies = ownedAtCurrentLevel
+  // copies carrega só o que a cascata simulada PRODUZIU até aqui -- o que
+  // o jogador já possuía de verdade em cada nível é somado separadamente a
+  // cada passo (via ownedByNameLevel), nunca duplicado: pro primeiro passo
+  // (fromLevel = currentLevel), copies começa em 0 e ownedAtCurrentLevel é
+  // somado abaixo como qualquer outro nível -- não fica pré-somado aqui.
+  let copies = 0
   let reachedLevel = currentLevel
+  // Cópias que sobram SEM CONVERTER no nível efetivamente alcançado --
+  // separado de `copies` (que seria zerado por qualquer passo seguinte que
+  // falhe, mesmo depois do ponto real de alcance, já que agora um passo
+  // pode falhar no meio e um passo POSTERIOR ainda ter sucesso graças a
+  // cópias extras já possuídas naquele nível -- ver comentário acima).
+  let leftoverAtReachedLevel = 0
   let totalMerges = 0
   let totalFeeCost = 0
   const steps: ChainStepDetail[] = []
@@ -175,7 +193,9 @@ export function simulateMergeChain(
     const merge = sortedMerges[i]
     const row = costTable[i]
     const fromLevel = i === 0 ? currentLevel : sortedMerges[i - 1].level
-    const availableCopies = copies
+    const ownedAtFromLevel =
+      i === 0 ? ownedAtCurrentLevel : (ownedByNameLevel.get(`${miner.name}::${fromLevel}`) ?? 0)
+    const availableCopies = copies + ownedAtFromLevel
     const mergesPerformed = Math.floor(availableCopies / merge.requiredPreviousCount)
     const missingCopies = Math.max(0, merge.requiredPreviousCount - availableCopies)
 
@@ -198,13 +218,14 @@ export function simulateMergeChain(
 
     if (mergesPerformed > 0) {
       reachedLevel = merge.level
+      leftoverAtReachedLevel = mergesPerformed
       totalMerges += mergesPerformed
       totalFeeCost += mergesPerformed * row.mergeFeeCost
     }
     copies = mergesPerformed
   }
 
-  return { steps, reachedLevel, totalMerges, totalFeeCost, leftoverCopies: copies }
+  return { steps, reachedLevel, totalMerges, totalFeeCost, leftoverCopies: leftoverAtReachedLevel }
 }
 
 // Pra cada minerador mergeable que o jogador possui (em qualquer nível,
