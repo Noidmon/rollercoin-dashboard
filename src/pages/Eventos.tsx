@@ -14,13 +14,12 @@ import type { MinersData } from '../types/miner'
 const DISCOUNT_OPTIONS = [0, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60]
 const BOX_PRICE_OPTIONS = [1.99, 3.99, 11.99, 29.99]
 
-function generateMultiplierOptions(recommended: number): number[] {
-  const options = new Set<number>()
-  for (let i = 1; i <= 50; i++) options.add(i)
-  for (let i = 55; i <= 100; i += 5) options.add(i)
-  for (let i = 110; i <= 1000; i += 10) options.add(i)
-  options.add(recommended)
-  return Array.from(options).sort((a, b) => a - b)
+// Todos os inteiros de 1 a 1000, sem pular nenhum -- select nativo lida bem
+// com 1000 <option>, sem precisar de virtualização (confirmado com teste
+// visual). 1000 bate com KNOWN_MAX_MULTIPLIER de calculateEventProfitability.ts,
+// então o multiplicador recomendado sempre cai dentro dessa faixa.
+function generateMultiplierOptions(): number[] {
+  return Array.from({ length: 1000 }, (_, i) => i + 1)
 }
 
 function scoreColorClass(score: number): string {
@@ -217,7 +216,7 @@ function EventosContent({
   const spendRltXp = getTaskXpReward(event.tasks, 'spend_rlt')
   const marketplaceXp = getTaskXpReward(event.tasks, 'marketplace')
 
-  const multiplierOptions = generateMultiplierOptions(recommendation.recommended)
+  const multiplierOptions = generateMultiplierOptions()
 
   const [multiplier, setMultiplier] = useState(recommendation.recommended)
   const [discount, setDiscount] = useState(event.default_discount_percent ?? 0)
