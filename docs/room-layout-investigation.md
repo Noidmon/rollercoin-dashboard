@@ -378,3 +378,84 @@ por NOME normalizado + POWER (mesma tolerância de 0.5% já estabelecida),
 devolvendo o `id` do catálogo -- daí o `image` já normalizado vem direto do
 catálogo, sem nenhuma lógica de slug própria. Depois da correção: 0/161
 mineradores quebrados.
+
+---
+
+# Atualização: BUG CRÍTICO de posicionamento de rack (debug pós-Prompt 50)
+
+O Prompt 50 passou nos testes automatizados (contagem 48/48 racks, 161/161
+mineradores, 0 imagens quebradas) mas o resultado visual estava errado --
+racks sobrepondo decoração, um rack até cortado pela borda do canvas numa
+das salas. A contagem valida "renderizou sem crashar", não "renderizou na
+posição certa" -- por isso este debug.
+
+## Causa raiz: `cellToPixel()`/`Dr` devolve um ponto de ANCORAGEM, não o canto superior esquerdo
+
+Achado direto no código-fonte real (função `ra`, o componente que renderiza
+CADA rack individual, em `RoomSimulatorPublicPage.js`):
+
+```js
+function ra({snapshot:e, rack:t, slot:n, selected:o}) {
+  return s.jsxs("div", {
+    className: "absolute",
+    style: {
+      left: n.left - j.width/2,   // n = a entrada do slot (Dr) pra esse rack
+      top:  n.top  - j.height,    // j = {width:75, height:120}
+      width: j.width,
+      height: j.height,
+      zIndex: Math.round(n.top),
+    },
+    ...
+  })
+}
+```
+
+O `left`/`top` de cada entrada da tabela `Dr` é o ponto de **ancoragem
+centro-horizontal + base-inferior** do rack -- exatamente a mesma convenção
+já confirmada e documentada pra posição do MINERADOR dentro do rack
+(`minerPixelBoxInRack`/`eo`/`Xo`). Não é coincidência: os dois sistemas
+(rack-na-sala e minerador-no-rack) usam a mesma lógica de ancoragem, só que
+na primeira investigação (Prompt 50) eu só apliquei essa conversão pro
+minerador, e usei `left`/`top` do rack DIRETO como canto superior esquerdo
+-- o que deslocava cada rack ~37px pra direita e 120px pra baixo da posição
+real, causando a sobreposição com a decoração vista nos screenshots de
+debug.
+
+**Correção**: `left = slot.left - RACK_BOX_WIDTH_PX/2`, `top = slot.top -
+RACK_BOX_HEIGHT_PX` (nova função `rackPixelBox()` em `roomLayout.ts`).
+Também adicionado `zIndex: Math.round(slot.top)` por rack, confirmado no
+mesmo trecho de código (racks mais "pra frente" na sala, top maior, ficam
+por cima dos mais "pra trás").
+
+## Confirmado que a DECORAÇÃO (`Ur`/`Ze`) NÃO precisa dessa conversão
+
+Investiguei a função `Gr()` (usada pra transformar cada entrada de
+`decorations` antes de virar `style`) especificamente pra não misturar os
+dois sistemas por engano:
+
+```js
+function Gr(e, t, n) {
+  if (n === "desktop") return { left: e.left, top: e.top }  // passthrough puro
+  // (mobile faz um remapeamento de grid pra responsividade -- não usado aqui)
+  ...
+}
+```
+
+Em modo desktop, `Gr` é um passthrough exato -- `left`/`top` de `Ur`/`Ze` já
+são o canto superior esquerdo, sem nenhuma conversão. `RoomBackground.tsx`
+(Prompt 49) já fazia isso certo desde o início; o bug era só nos racks.
+
+## Verificação visual antes/depois (dado real, conta NoID)
+
+Sala 0 -- antes: rack esquerdo caindo em cima do tapete/planta, rack direito
+em cima da estante cinza. Depois: 12 racks organizados em duas fileiras
+limpas (8 numa fileira, 4 noutra), decoração visível ao redor sem
+sobreposição.
+
+Sala 1 -- antes: um rack parcialmente cortado pela borda superior do
+canvas. Depois: mesmo rack aparece inteiro, dentro da área visível, 3
+fileiras organizadas (4/8/6 racks).
+
+Contagem depois da correção: continua 48/48 racks, 161/161 mineradores, 0
+imagens quebradas -- a correção foi só de POSIÇÃO, não afetou quantidade
+nem resolução de imagem.

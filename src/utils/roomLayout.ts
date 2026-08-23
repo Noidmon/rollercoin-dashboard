@@ -22,6 +22,24 @@ const MINER_SHELF_PITCH = 32
 const MINER_BASE_LIFT = 10
 const MINER_SPRITE_SCALE = 0.5
 
+// BUG corrigido (achado no debug pós-Prompt 50, com dado real): cellToPixel()
+// devolve o ponto de ANCORAGEM do rack -- centro horizontal + base inferior
+// -- NÃO o canto superior esquerdo da caixa 75x120px. Usar left/top direto
+// como estava fazendo (Prompt 50) deslocava todo rack ~37px pra direita e
+// ~120px pra baixo da posição real, causando a sobreposição com a
+// decoração vista nos screenshots de debug.
+//
+// Confirmado direto na função de render real (`ra`, componente por-rack):
+//   style: { left: slot.left - j.width/2, top: slot.top - j.height, ... }
+// Mesma convenção de ancoragem (centro-x/base-y) já usada por
+// minerPixelBoxInRack -- não é coincidência, os dois usam o mesmo sistema.
+export function rackPixelBox(anchor: PixelPosition): { left: number; top: number } {
+  return {
+    left: anchor.left - RACK_BOX_WIDTH_PX / 2,
+    top: anchor.top - RACK_BOX_HEIGHT_PX,
+  }
+}
+
 // Um rack real, posicionado numa sala real -- extraído de room-config via
 // roomConfigToRackPlacements(). Deliberadamente achatado (sem os
 // mineradores aninhados dentro) pra RoomRacksLayer poder receber `miners`

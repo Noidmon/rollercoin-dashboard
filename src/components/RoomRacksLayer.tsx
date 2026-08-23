@@ -4,6 +4,7 @@ import { matchRoomMinerInstances } from '../utils/matchMinersInventory'
 import type { MinersData } from '../types/miner'
 import {
   minerPixelBoxInRack,
+  rackPixelBox,
   RACK_BOX_HEIGHT_PX,
   RACK_BOX_WIDTH_PX,
   type RackPlacement,
@@ -109,16 +110,21 @@ export default function RoomRacksLayer({ placements, miners }: RoomRacksLayerPro
 
         const rackImage = placement.rackId ? (rackImageById?.get(placement.rackId) ?? null) : null
         const rackMiners = minersByRackInstance.get(placement.instanceId) ?? []
+        const box = rackPixelBox(placement.pixelPosition)
 
         return (
           <div
             key={placement.instanceId}
             className="absolute"
             style={{
-              left: placement.pixelPosition.left,
-              top: placement.pixelPosition.top,
+              left: box.left,
+              top: box.top,
               width: RACK_BOX_WIDTH_PX,
               height: RACK_BOX_HEIGHT_PX,
+              // Racks mais "pra frente" na sala (top maior) ficam por cima
+              // dos mais "pra trás" -- mesmo critério de profundidade usado
+              // na função de render real (zIndex baseado no top do slot).
+              zIndex: Math.round(placement.pixelPosition.top),
             }}
             title={placement.name}
           >

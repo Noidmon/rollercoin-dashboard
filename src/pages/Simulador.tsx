@@ -9,18 +9,22 @@ import RoomRacksLayer from '../components/RoomRacksLayer'
 import { roomConfigToRackPlacements } from '../utils/roomLayout'
 import type { PlayerData } from '../context/PlayerContext'
 
+// A RollerCoin permite até 4 salas por conta (níveis 0-3) -- os 4 botões
+// aparecem sempre, mesmo pras salas que a conta ainda não desbloqueou
+// (ficam desabilitadas, sem dado real pra mostrar).
+const ROOM_LEVELS = [0, 1, 2, 3]
+
 // Visual real da sala: fundo (RoomBackground) + racks/mineradores reais da
-// conta (RoomRacksLayer) sobrepostos no mesmo container 720x450. Uma seção
-// por sala que a conta realmente tem desbloqueada (room_level 0, 1, 2...),
-// nunca as duas composições lado a lado como no preview temporário anterior
-// -- cada sala mostra só a composição (Sala 0 ou Salas 1-3) que bate com o
-// room_level real dela.
+// conta (RoomRacksLayer) sobrepostos no mesmo container 720x450. Botões 1-4
+// na lateral trocam qual sala é exibida -- só uma por vez, nunca todas
+// empilhadas (isso era o preview de debug de uma etapa anterior).
 function RoomVisualization({ roomConfig }: { roomConfig: PlayerData['roomConfig'] }) {
   const placements = roomConfigToRackPlacements(roomConfig)
+  const unlockedLevels = new Set(placements.map((p) => p.roomLevel))
 
-  const roomLevels = [...new Set(placements.map((p) => p.roomLevel))].sort((a, b) => a - b)
+  const [selectedLevel, setSelectedLevel] = useState(() => Math.min(...unlockedLevels, 0))
 
-  if (roomLevels.length === 0) {
+  if (unlockedLevels.size === 0) {
     return (
       <Card title="Sala">
         <p className="text-sm text-slate-400">Nenhum rack encontrado no room-config desta conta.</p>
@@ -28,23 +32,44 @@ function RoomVisualization({ roomConfig }: { roomConfig: PlayerData['roomConfig'
     )
   }
 
+  const racksInSelectedLevel = placements.filter((p) => p.roomLevel === selectedLevel)
+
   return (
     <Card title="Sala">
-      <div className="flex flex-wrap gap-4">
-        {roomLevels.map((level) => (
-          <div key={level}>
-            <p className="mb-2 text-xs text-slate-400">
-              Sala {level} ({placements.filter((p) => p.roomLevel === level).length} racks)
-            </p>
-            <div className="relative" style={{ width: 720, height: 450 }}>
-              <RoomBackground roomLevel={level} />
-              <RoomRacksLayer
-                placements={placements.filter((p) => p.roomLevel === level)}
-                miners={roomConfig.miners}
-              />
-            </div>
+      <div className="flex items-start gap-3">
+        <div className="flex flex-col gap-2">
+          {ROOM_LEVELS.map((level) => {
+            const unlocked = unlockedLevels.has(level)
+            return (
+              <button
+                key={level}
+                type="button"
+                disabled={!unlocked}
+                onClick={() => setSelectedLevel(level)}
+                title={unlocked ? `Sala ${level}` : 'Sala não desbloqueada'}
+                className={`flex h-10 w-10 items-center justify-center rounded-md border text-sm font-bold transition ${
+                  !unlocked
+                    ? 'cursor-not-allowed border-slate-800 text-slate-700'
+                    : selectedLevel === level
+                      ? 'border-indigo-400 bg-indigo-600 text-white'
+                      : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
+                }`}
+              >
+                {level + 1}
+              </button>
+            )
+          })}
+        </div>
+
+        <div>
+          <p className="mb-2 text-xs text-slate-400">
+            Sala {selectedLevel} ({racksInSelectedLevel.length} racks)
+          </p>
+          <div className="relative" style={{ width: 720, height: 450 }}>
+            <RoomBackground roomLevel={selectedLevel} />
+            <RoomRacksLayer placements={racksInSelectedLevel} miners={roomConfig.miners} />
           </div>
-        ))}
+        </div>
       </div>
     </Card>
   )
