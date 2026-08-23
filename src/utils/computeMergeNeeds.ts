@@ -88,6 +88,20 @@ export function buildPartsOwnedMap(partsInventory: PartInventoryEntry[]): Map<st
   return partsOwned
 }
 
+// Quantas cópias o jogador tem de cada minerador em cada nível (sala +
+// inventário colado, já somados antes de chegar aqui) -- chave
+// "{nome}::{nível}". Exportado (em vez de ficar só dentro de
+// computeMergeNeeds) pra ser reaproveitado em /merges no aviso "você já tem
+// X do nível resultante", sem duplicar a mesma agregação por nome+nível.
+export function buildOwnedByNameLevelMap(ownedEntries: MatchedMinerEntry[]): Map<string, number> {
+  const ownedByNameLevel = new Map<string, number>()
+  for (const entry of ownedEntries) {
+    const key = `${entry.name}::${entry.matchedLevel}`
+    ownedByNameLevel.set(key, (ownedByNameLevel.get(key) ?? 0) + entry.quantity)
+  }
+  return ownedByNameLevel
+}
+
 export interface ChainStepDetail {
   fromLevel: number
   toLevel: number
@@ -206,11 +220,7 @@ export function computeMergeNeeds(
   partPrices: Record<string, number>,
   craftingPrices: CraftingPrices,
 ): MergeNeed[] {
-  const ownedByNameLevel = new Map<string, number>()
-  for (const entry of ownedEntries) {
-    const key = `${entry.name}::${entry.matchedLevel}`
-    ownedByNameLevel.set(key, (ownedByNameLevel.get(key) ?? 0) + entry.quantity)
-  }
+  const ownedByNameLevel = buildOwnedByNameLevelMap(ownedEntries)
 
   // nível MÍNIMO possuído de cada minerador -- é a partir dele que o
   // PRÓXIMO merge acionável deve ser calculado. Um jogador pode ter cópias

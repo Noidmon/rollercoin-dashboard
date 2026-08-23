@@ -110,7 +110,14 @@ export interface ActivePart {
 }
 
 // Peças de fato usadas naquele nível (count > 0) -- normalmente só 1 tipo,
-// mas alguns merges usam os 3 ao mesmo tempo.
+// mas alguns merges usam os 3 ao mesmo tempo. Alguns níveis reais não usam
+// NENHUMA peça (os 3 counts zerados) -- confirmado em miners.json (ex:
+// Bronze Core nível 4 "Rare -> Epic", requiredPreviousCount 7 -- sim, 7
+// mesmo, não é bug de campo trocado -- e nível 6 "Legendary -> Unreal",
+// requiredPreviousCount 3, ambos com fan/hashboard/wire zerados). Nesses
+// casos getActiveParts retorna [] de propósito e a UI de /merges
+// corretamente não mostra nenhuma linha de peça -- não é bug de
+// renderização, é o merge exigindo só cópias + taxa RLT.
 export function getActiveParts(merge: MinerMerge): ActivePart[] {
   const parts: ActivePart[] = []
   const candidates: [PartType, number, number][] = [

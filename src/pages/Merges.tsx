@@ -17,6 +17,7 @@ import {
 } from '../utils/mergesStorage'
 import { readStoredPartPrices } from '../utils/partPriceStorage'
 import {
+  buildOwnedByNameLevelMap,
   buildPartsOwnedMap,
   computeMergeNeeds,
   simulateMergeChain,
@@ -100,6 +101,30 @@ function PowerBonusLine({
   )
 }
 
+// Aviso "você já tem X do nível resultante" -- só quando o jogador já
+// possui pelo menos 1 cópia do nível PRODUZIDO por esse merge (sala +
+// inventário colado, via ownedByNameLevelMap). Reaproveitado tanto no card
+// principal quanto em cada passo da Cadeia Completa.
+function AlreadyOwnedWarning({
+  requiredCopies,
+  fromLevel,
+  toLevel,
+  ownedAtToLevel,
+}: {
+  requiredCopies: number
+  fromLevel: number
+  toLevel: number
+  ownedAtToLevel: number
+}) {
+  if (ownedAtToLevel <= 0) return null
+  return (
+    <div className="mt-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-2 text-xs text-amber-300">
+      Este merge consome {requiredCopies}× {rarityLabel(fromLevel)} e produz 1 {rarityLabel(toLevel)}
+      . Você já tem {ownedAtToLevel} {rarityLabel(toLevel)} -- ficará com {ownedAtToLevel + 1}.
+    </div>
+  )
+}
+
 // Linha alternativa "ou craftando do seu estoque" abaixo de cada peça
 // faltante -- reaproveita simulatePartCrafting (já calculado em
 // PartNeed.craftAlternative por computeMergeNeeds.ts, sem duplicar aqui).
@@ -158,6 +183,21 @@ function passesQualityFilter(ratio: number, filter: QualityFilter): boolean {
   return true
 }
 
+// Filtra pelo "Alcance Real" já calculado (chainSimulations.reachedLevel) --
+// mostra só mineradores que conseguem chegar em pelo menos essa raridade
+// HOJE, só com cópias (mesma definição já usada na frase de Alcance Real,
+// sem checar peça).
+type ReachFilter = 'any' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'unreal'
+
+const REACH_TABS: { key: ReachFilter; label: string; minLevel: number }[] = [
+  { key: 'any', label: 'Qualquer', minLevel: 0 },
+  { key: 'uncommon', label: 'Uncommon+', minLevel: 2 },
+  { key: 'rare', label: 'Rare+', minLevel: 3 },
+  { key: 'epic', label: 'Epic+', minLevel: 4 },
+  { key: 'legendary', label: 'Legendary+', minLevel: 5 },
+  { key: 'unreal', label: 'Unreal', minLevel: 6 },
+]
+
 type SortOption =
   | 'padrao'
   | 'custo-beneficio'
@@ -179,7 +219,13 @@ const SORT_OPTIONS: SortDropdownOption<SortOption>[] = [
 // cards principais, reaproveitando os campos já calculados por
 // simulateMergeChain (cópias derivadas de merges anteriores, peças reais do
 // inventário, ratio de qualidade).
-function ChainStepRow({ step }: { step: ChainSimulation['steps'][number] }) {
+function ChainStepRow({
+  step,
+  ownedAtToLevel,
+}: {
+  step: ChainSimulation['steps'][number]
+  ownedAtToLevel: number
+}) {
   return (
     <div className="rounded-md border border-slate-800 bg-slate-950/60 p-2.5 text-xs">
       <div className="flex items-center justify-between font-semibold text-slate-200">
@@ -208,6 +254,13 @@ function ChainStepRow({ step }: { step: ChainSimulation['steps'][number] }) {
           {step.missingCopies > 0 && ` (faltam ${step.missingCopies})`}
         </span>
       </div>
+
+      <AlreadyOwnedWarning
+        requiredCopies={step.requiredCopies}
+        fromLevel={step.fromLevel}
+        toLevel={step.toLevel}
+        ownedAtToLevel={ownedAtToLevel}
+      />
 
       {step.partsNeeded.map((p: PartNeed) => (
         <div key={`${p.rarity}-${p.type}`} className="mt-1">
@@ -246,10 +299,12 @@ function FullChain({
   miner,
   currentLevel,
   simulation,
+  ownedByNameLevelMap,
 }: {
   miner: Miner
   currentLevel: number
   simulation: ChainSimulation
+  ownedByNameLevelMap: Map<string, number>
 }) {
   if (simulation.steps.length === 0) return null
 
@@ -279,7 +334,11 @@ function FullChain({
 
       <div className="space-y-1.5">
         {simulation.steps.map((step) => (
-          <ChainStepRow key={step.toLevel} step={step} />
+          <ChainStepRow
+            key={step.toLevel}
+            step={step}
+            ownedAtToLevel={ownedByNameLevelMap.get(`${miner.name}::${step.toLevel}`) ?? 0}
+          />
         ))}
       </div>
     </div>
@@ -312,6 +371,7 @@ export default function Merges() {
   const [partPrices] = useState<Record<string, number>>(() => readStoredPartPrices())
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ready')
   const [qualityFilter, setQualityFilter] = useState<QualityFilter>('all')
+  const [reachFilter, setReachFilter] = useState<ReachFilter>('any')
   const [sortOption, setSortOption] = useState<SortOption>('padrao')
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set())
 
@@ -419,6 +479,14 @@ export default function Merges() {
     [minersInventory, roomMatchResult],
   )
 
+  // Cópias já possuídas por nome+nível (sala + colado) -- reaproveitado pro
+  // aviso "você já tem X do nível resultante" (item 2), tanto no card
+  // principal quanto em cada passo da Cadeia Completa.
+  const ownedByNameLevelMap = useMemo(
+    () => buildOwnedByNameLevelMap(combinedMinersInventory),
+    [combinedMinersInventory],
+  )
+
   const allUnrecognized = useMemo(
     () => [...unrecognized, ...roomMatchResult.unrecognized],
     [unrecognized, roomMatchResult],
@@ -446,31 +514,6 @@ export default function Merges() {
     return counts
   }, [mergeNeeds])
 
-  const filteredMergeNeeds = useMemo(() => {
-    const filtered = mergeNeeds.filter(
-      (need) => need.status === statusFilter && passesQualityFilter(need.nextRatioPower, qualityFilter),
-    )
-    // Poder/Bônus usam o valor do PRÓXIMO nível de merge disponível --
-    // desempate de 2 níveis na mesma direção do sort ativo, mesmo padrão já
-    // usado em /mineradores (getEffectivePower/getEffectiveBonus lá, aqui
-    // nextPower/nextBonus porque o critério é por instância possuída, não
-    // pelo nível mais forte absoluto do minerador).
-    switch (sortOption) {
-      case 'custo-beneficio':
-        return [...filtered].sort((a, b) => a.nextRatioPower - b.nextRatioPower)
-      case 'poder_desc':
-        return [...filtered].sort((a, b) => b.nextPower - a.nextPower || b.nextBonus - a.nextBonus)
-      case 'poder_asc':
-        return [...filtered].sort((a, b) => a.nextPower - b.nextPower || a.nextBonus - b.nextBonus)
-      case 'bonus_desc':
-        return [...filtered].sort((a, b) => b.nextBonus - a.nextBonus || b.nextPower - a.nextPower)
-      case 'bonus_asc':
-        return [...filtered].sort((a, b) => a.nextBonus - b.nextBonus || a.nextPower - b.nextPower)
-      default:
-        return filtered
-    }
-  }, [mergeNeeds, statusFilter, qualityFilter, sortOption])
-
   const minersById = useMemo(() => {
     const map = new Map<string, Miner>()
     if (minersData) for (const m of minersData.miners) map.set(m.id, m)
@@ -481,7 +524,8 @@ export default function Merges() {
 
   // Simulação de "até onde dá pra subir só com as cópias já possuídas" --
   // alimenta tanto a frase de "Alcance Real" quanto a lista detalhada da
-  // "Cadeia Completa" (mesmos dados, sem duplicar o cálculo).
+  // "Cadeia Completa" quanto o filtro de "Alcance mínimo" (mesmos dados,
+  // sem duplicar o cálculo).
   const chainSimulations = useMemo(() => {
     const map = new Map<string, ChainSimulation>()
     if (!craftingPrices) return map
@@ -503,6 +547,38 @@ export default function Merges() {
     }
     return map
   }, [mergeNeeds, minersById, partsOwnedMap, forgeDiscount, partPrices, craftingPrices])
+
+  const filteredMergeNeeds = useMemo(() => {
+    const filtered = mergeNeeds.filter((need) => {
+      if (need.status !== statusFilter) return false
+      if (!passesQualityFilter(need.nextRatioPower, qualityFilter)) return false
+      const minReachLevel = REACH_TABS.find((tab) => tab.key === reachFilter)?.minLevel ?? 0
+      if (minReachLevel > 0) {
+        const reachedLevel = chainSimulations.get(need.minerId)?.reachedLevel ?? need.currentLevel
+        if (reachedLevel < minReachLevel) return false
+      }
+      return true
+    })
+    // Poder/Bônus usam o valor do PRÓXIMO nível de merge disponível --
+    // desempate de 2 níveis na mesma direção do sort ativo, mesmo padrão já
+    // usado em /mineradores (getEffectivePower/getEffectiveBonus lá, aqui
+    // nextPower/nextBonus porque o critério é por instância possuída, não
+    // pelo nível mais forte absoluto do minerador).
+    switch (sortOption) {
+      case 'custo-beneficio':
+        return [...filtered].sort((a, b) => a.nextRatioPower - b.nextRatioPower)
+      case 'poder_desc':
+        return [...filtered].sort((a, b) => b.nextPower - a.nextPower || b.nextBonus - a.nextBonus)
+      case 'poder_asc':
+        return [...filtered].sort((a, b) => a.nextPower - b.nextPower || a.nextBonus - b.nextBonus)
+      case 'bonus_desc':
+        return [...filtered].sort((a, b) => b.nextBonus - a.nextBonus || b.nextPower - a.nextPower)
+      case 'bonus_asc':
+        return [...filtered].sort((a, b) => a.nextBonus - b.nextBonus || a.nextPower - b.nextPower)
+      default:
+        return filtered
+    }
+  }, [mergeNeeds, statusFilter, qualityFilter, reachFilter, chainSimulations, sortOption])
 
   if (loadError) {
     return (
@@ -646,6 +722,24 @@ export default function Merges() {
                 </div>
               </div>
 
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs text-slate-500">Alcance mínimo (hoje, só cópias):</span>
+                {REACH_TABS.map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setReachFilter(tab.key)}
+                    className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                      reachFilter === tab.key
+                        ? 'bg-slate-600 text-white'
+                        : 'bg-slate-800/60 text-slate-400 hover:bg-slate-700'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
               {filteredMergeNeeds.length === 0 ? (
                 <Card title="Próximos Merges">
                   <p className="text-sm text-slate-400">Nenhum minerador nessa categoria.</p>
@@ -721,6 +815,15 @@ export default function Merges() {
                             <span className="text-slate-200">{formatRLT(need.mergeFeeCost)} RLT</span>
                           </div>
                         </div>
+
+                        <AlreadyOwnedWarning
+                          requiredCopies={need.requiredCopies}
+                          fromLevel={need.currentLevel}
+                          toLevel={need.nextLevel}
+                          ownedAtToLevel={
+                            ownedByNameLevelMap.get(`${need.minerName}::${need.nextLevel}`) ?? 0
+                          }
+                        />
 
                         {need.partsNeeded.length > 0 && (
                           <div className="mt-3 space-y-1.5 border-t border-slate-800 pt-3">
@@ -813,6 +916,7 @@ export default function Merges() {
                                     miner={miner}
                                     currentLevel={need.currentLevel}
                                     simulation={simulation}
+                                    ownedByNameLevelMap={ownedByNameLevelMap}
                                   />
                                 )
                               })()}
