@@ -221,11 +221,21 @@ const SORT_OPTIONS: SortDropdownOption<SortOption>[] = [
 // inventário, ratio de qualidade).
 function ChainStepRow({
   step,
+  realOwnedAtFromLevel,
   ownedAtToLevel,
 }: {
   step: ChainSimulation['steps'][number]
+  realOwnedAtFromLevel: number
   ownedAtToLevel: number
 }) {
+  // "Cópias" mostra só posse REAL (sala + colado) nesse nível específico --
+  // NUNCA a cascata simulada (step.availableCopies/missingCopies, usada só
+  // pra calcular custo/taxa/alcance internamente, continuam como estão).
+  // Mostrar o valor projetado aqui dava a impressão de que o jogador já
+  // tinha cópias que na verdade só existiriam SE os merges anteriores da
+  // cadeia já tivessem sido feitos.
+  const realMissingCopies = Math.max(0, step.requiredCopies - realOwnedAtFromLevel)
+
   return (
     <div className="rounded-md border border-slate-800 bg-slate-950/60 p-2.5 text-xs">
       <div className="flex items-center justify-between font-semibold text-slate-200">
@@ -249,9 +259,9 @@ function ChainStepRow({
 
       <div className="mt-1.5 flex items-center justify-between">
         <span className="text-slate-400">Cópias</span>
-        <span className={step.missingCopies > 0 ? 'text-red-400' : 'text-emerald-400'}>
-          {step.availableCopies} / {step.requiredCopies}
-          {step.missingCopies > 0 && ` (faltam ${step.missingCopies})`}
+        <span className={realMissingCopies > 0 ? 'text-red-400' : 'text-emerald-400'}>
+          {realOwnedAtFromLevel} / {step.requiredCopies}
+          {realMissingCopies > 0 && ` (faltam ${realMissingCopies})`}
         </span>
       </div>
 
@@ -337,6 +347,7 @@ function FullChain({
           <ChainStepRow
             key={step.toLevel}
             step={step}
+            realOwnedAtFromLevel={ownedByNameLevelMap.get(`${miner.name}::${step.fromLevel}`) ?? 0}
             ownedAtToLevel={ownedByNameLevelMap.get(`${miner.name}::${step.toLevel}`) ?? 0}
           />
         ))}
@@ -870,12 +881,35 @@ export default function Merges() {
                           ) {
                             return null
                           }
-                          const finalStep = simulation.steps.find(
-                            (s) => s.toLevel === simulation.reachedLevel,
+
+                          // Todos os passos DENTRO do alcance real (do atual
+                          // até reachedLevel) -- reaproveita as peças já
+                          // calculadas por simulateMergeChain pra cada
+                          // passo, sem duplicar o cálculo.
+                          const stepsInReach = simulation.steps.filter(
+                            (s) => s.toLevel <= simulation.reachedLevel,
                           )
-                          const finalStepPartsComplete = finalStep?.partsNeeded.every(
-                            (p) => p.missing === 0,
+                          const deficitLines = stepsInReach.flatMap((s) =>
+                            s.partsNeeded
+                              .filter((p) => p.missing > 0)
+                              .map((p) => ({ step: s, part: p })),
                           )
+                          const totalMissingCost = deficitLines.reduce(
+                            (sum, { part }) => sum + part.missingCost,
+                            0,
+                          )
+                          const totalCraftCost = deficitLines.reduce(
+                            (sum, { part }) =>
+                              sum +
+                              (part.craftAlternative?.fullyCraftable
+                                ? part.craftAlternative.totalRLTCost
+                                : 0),
+                            0,
+                          )
+                          const hasCraftOption = deficitLines.some(
+                            (l) => l.part.craftAlternative?.fullyCraftable,
+                          )
+
                           return (
                             <div className="mt-3 border-t border-slate-800 pt-3 text-xs">
                               <p className="text-slate-300">
@@ -886,14 +920,30 @@ export default function Merges() {
                                 {simulation.leftoverCopies}×), gastando{' '}
                                 {formatRLT(simulation.totalFeeCost)} RLT em fusões (peças à parte).
                               </p>
-                              {finalStep && (
-                                <p
-                                  className={`mt-1 ${finalStepPartsComplete ? 'text-emerald-400' : 'text-amber-400'}`}
-                                >
-                                  {finalStepPartsComplete
-                                    ? 'Peças do passo final: completas.'
-                                    : 'Peças do passo final: faltam peças no inventário.'}
-                                </p>
+                              {deficitLines.length === 0 ? (
+                                <p className="mt-1 text-emerald-400">Peças do passo final: completas.</p>
+                              ) : (
+                                <div className="mt-1.5 text-amber-400">
+                                  <p>Peças faltando ao longo do caminho:</p>
+                                  <ul className="mt-0.5 list-disc space-y-0.5 pl-4">
+                                    {deficitLines.map(({ step, part }, i) => (
+                                      <li key={i}>
+                                        {rarityLabel(step.fromLevel)}→{rarityLabel(step.toLevel)}: faltam{' '}
+                                        {part.missing} {partPriceKey(part.rarity, part.type)} (
+                                        {formatRLT(part.missingCost)} RLT)
+                                      </li>
+                                    ))}
+                                  </ul>
+                                  <p className="mt-1 font-semibold text-white">
+                                    Total: {formatRLT(totalMissingCost)} RLT
+                                    {hasCraftOption && (
+                                      <span className="font-normal text-amber-400">
+                                        {' '}
+                                        (ou {formatRLT(totalCraftCost)} RLT craftando do estoque)
+                                      </span>
+                                    )}
+                                  </p>
+                                </div>
                               )}
                             </div>
                           )
