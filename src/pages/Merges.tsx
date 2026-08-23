@@ -34,6 +34,7 @@ import {
   partImagePath,
   partPriceKey,
   type CraftingPrices,
+  type PartType,
 } from '../utils/minerMergeCalculator'
 import { getDeepestConsumedRarity } from '../utils/partCrafting'
 import { resolveAssetUrl } from '../utils/resolveAssetUrl'
@@ -898,17 +899,35 @@ export default function Merges() {
                             (sum, { part }) => sum + part.missingCost,
                             0,
                           )
-                          const totalCraftCost = deficitLines.reduce(
-                            (sum, { part }) =>
-                              sum +
-                              (part.craftAlternative?.fullyCraftable
-                                ? part.craftAlternative.totalRLTCost
-                                : 0),
-                            0,
-                          )
-                          const hasCraftOption = deficitLines.some(
-                            (l) => l.part.craftAlternative?.fullyCraftable,
-                          )
+
+                          // Agregado de crafting -- reaproveita
+                          // simulatePartCrafting já calculado por
+                          // PartNeed.craftAlternative (não recalcula nada
+                          // aqui), só soma por TIPO quanto de Common seria
+                          // consumido no total (e o déficit residual de
+                          // Common, se nem craftando dá pra fechar 100%).
+                          const consumedCommonByType = new Map<PartType, number>()
+                          const residualCommonByType = new Map<PartType, number>()
+                          let totalCraftCost = 0
+                          for (const { part } of deficitLines) {
+                            const alt = part.craftAlternative
+                            if (!alt) continue
+                            totalCraftCost += alt.totalRLTCost
+                            const commonUsed = alt.consumedByRarity.common ?? 0
+                            if (commonUsed > 0) {
+                              consumedCommonByType.set(
+                                part.type,
+                                (consumedCommonByType.get(part.type) ?? 0) + commonUsed,
+                              )
+                            }
+                            if (!alt.fullyCraftable && alt.finalDeficit > 0) {
+                              residualCommonByType.set(
+                                part.type,
+                                (residualCommonByType.get(part.type) ?? 0) + alt.finalDeficit,
+                              )
+                            }
+                          }
+                          const hasCraftOption = consumedCommonByType.size > 0
 
                           return (
                             <div className="mt-3 border-t border-slate-800 pt-3 text-xs">
@@ -923,23 +942,41 @@ export default function Merges() {
                               {deficitLines.length === 0 ? (
                                 <p className="mt-1 text-emerald-400">Peças do passo final: completas.</p>
                               ) : (
-                                <div className="mt-1.5 text-amber-400">
-                                  <p>Peças faltando ao longo do caminho:</p>
-                                  <ul className="mt-0.5 list-disc space-y-0.5 pl-4">
-                                    {deficitLines.map(({ step, part }, i) => (
-                                      <li key={i}>
-                                        {rarityLabel(step.fromLevel)}→{rarityLabel(step.toLevel)}: faltam{' '}
-                                        {part.missing} {partPriceKey(part.rarity, part.type)} (
-                                        {formatRLT(part.missingCost)} RLT)
-                                      </li>
-                                    ))}
-                                  </ul>
-                                  <p className="mt-1 font-semibold text-white">
-                                    Total: {formatRLT(totalMissingCost)} RLT
+                                <div className="mt-1.5">
+                                  {hasCraftOption && (
+                                    <p className="text-amber-400">
+                                      Craftando do estoque: usa{' '}
+                                      {[...consumedCommonByType].map(([type, qty], i, arr) => (
+                                        <span key={type}>
+                                          {qty} {partPriceKey('common', type)}
+                                          {i < arr.length - 1 ? ', ' : ''}
+                                        </span>
+                                      ))}{' '}
+                                      no total, custando {formatRLT(totalCraftCost)} RLT em fusões de
+                                      peça
+                                    </p>
+                                  )}
+                                  {residualCommonByType.size > 0 && (
+                                    <p className="mt-1 text-red-400">
+                                      Mesmo craftando, ainda faltariam{' '}
+                                      {[...residualCommonByType].map(([type, qty], i, arr) => (
+                                        <span key={type}>
+                                          {qty} {partPriceKey('common', type)}
+                                          {i < arr.length - 1 ? ', ' : ''}
+                                        </span>
+                                      ))}{' '}
+                                      -- precisaria comprar ou farmar.
+                                    </p>
+                                  )}
+                                  <p className="mt-1.5 space-y-0.5 font-semibold text-white">
+                                    <span className="block">
+                                      Total (taxas de merge + peças, comprando):{' '}
+                                      {formatRLT(simulation.totalFeeCost + totalMissingCost)} RLT
+                                    </span>
                                     {hasCraftOption && (
-                                      <span className="font-normal text-amber-400">
-                                        {' '}
-                                        (ou {formatRLT(totalCraftCost)} RLT craftando do estoque)
+                                      <span className="block">
+                                        Total (taxas de merge + peças, craftando):{' '}
+                                        {formatRLT(simulation.totalFeeCost + totalCraftCost)} RLT
                                       </span>
                                     )}
                                   </p>
