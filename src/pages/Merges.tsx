@@ -26,6 +26,8 @@ import {
 } from '../utils/computeMergeNeeds'
 import {
   FORGE_LEVELS,
+  getMergeLevelColor,
+  getMinerLevelRarityName,
   getMinerPowerAtLevel,
   getRatioColor,
   partImagePath,
@@ -38,8 +40,20 @@ function formatRLT(value: number): string {
   return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-function levelLabel(level: number): string {
-  return level === 0 ? 'Base' : `Nível ${level}`
+// Nome de raridade oficial do minerador (Common/Uncommon/.../Unreal) em vez
+// de "Nível N" -- getMinerLevelRarityName reaproveitada de
+// minerMergeCalculator.ts, junto com getMergeLevelColor pra destacar o
+// nível de DESTINO na mesma cor já usada nos badges de /mineradores/:slug.
+function rarityLabel(level: number): string {
+  return getMinerLevelRarityName(level)
+}
+
+function DestinationRarity({ level }: { level: number }) {
+  return (
+    <span className="font-bold" style={{ color: getMergeLevelColor(level) }}>
+      {getMinerLevelRarityName(level)}
+    </span>
+  )
 }
 
 type StatusFilter = 'ready' | 'parts-missing' | 'copies-missing'
@@ -83,7 +97,7 @@ function ChainStepRow({ step }: { step: ChainSimulation['steps'][number] }) {
     <div className="rounded-md border border-slate-800 bg-slate-950/60 p-2.5 text-xs">
       <div className="flex items-center justify-between font-semibold text-slate-200">
         <span>
-          {levelLabel(step.fromLevel)} -&gt; Nível {step.toLevel}
+          {rarityLabel(step.fromLevel)} -&gt; <DestinationRarity level={step.toLevel} />
         </span>
         <span
           className="rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white"
@@ -150,7 +164,7 @@ function FullChain({
     <div className="mt-3 space-y-2 border-t border-slate-800 pt-3">
       <div className="space-y-1 text-sm">
         <p className="text-xs text-slate-400">
-          {levelLabel(currentLevel)} -&gt; Nível {last.toLevel} (máximo)
+          {rarityLabel(currentLevel)} -&gt; <DestinationRarity level={last.toLevel} /> (máximo)
         </p>
         <div className="flex items-center justify-between">
           <span className="text-slate-400">Poder final</span>
@@ -490,7 +504,8 @@ export default function Merges() {
                           <div>
                             <p className="font-semibold text-white">{need.minerName}</p>
                             <p className="text-xs text-slate-400">
-                              {levelLabel(need.currentLevel)} -&gt; Nível {need.nextLevel}
+                              {rarityLabel(need.currentLevel)} -&gt;{' '}
+                              <DestinationRarity level={need.nextLevel} />
                             </p>
                           </div>
                           <div className="ml-auto flex flex-col items-end gap-1">
@@ -576,8 +591,9 @@ export default function Merges() {
                           return (
                             <div className="mt-3 border-t border-slate-800 pt-3 text-xs">
                               <p className="text-slate-300">
-                                Com suas {need.ownedAtCurrentLevel} cópias hoje, dá pra fundir até
-                                Nível {simulation.reachedLevel} ({simulation.totalMerges}{' '}
+                                Com suas {need.ownedAtCurrentLevel} cópias hoje, dá pra fundir até{' '}
+                                <DestinationRarity level={simulation.reachedLevel} /> (
+                                {simulation.totalMerges}{' '}
                                 {simulation.totalMerges === 1 ? 'merge' : 'merges'}, sobrando{' '}
                                 {simulation.leftoverCopies}×), gastando{' '}
                                 {formatRLT(simulation.totalFeeCost)} RLT em fusões (peças à parte).

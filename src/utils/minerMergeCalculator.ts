@@ -144,6 +144,26 @@ export function getMergeLevelColor(level: number): string {
   return LEVEL_COLORS[level] ?? FALLBACK_LEVEL_COLOR
 }
 
+// Nome de raridade do PRÓPRIO MINERADOR ao fundir (fonte: blog oficial
+// RollerCoin, Dev Diaries) -- NÃO confundir com a raridade das PEÇAS
+// consumidas no merge (LEVEL_TO_RARITY acima), que fica um nível atrás (pra
+// chegar em "Uncommon" você gasta peças "Common", etc). Level 0 = base
+// (ainda não fundido) = "Common"; nível 7 (raro, sem referência oficial
+// confirmada -- mesma ausência de cor/ícone já documentada em LEVEL_COLORS)
+// cai no fallback numérico em vez de arriscar um nome errado.
+const MINER_LEVEL_RARITY_NAMES: Record<number, string> = {
+  0: 'Common',
+  2: 'Uncommon',
+  3: 'Rare',
+  4: 'Epic',
+  5: 'Legendary',
+  6: 'Unreal',
+}
+
+export function getMinerLevelRarityName(level: number): string {
+  return MINER_LEVEL_RARITY_NAMES[level] ?? `Nível ${level}`
+}
+
 // Limiares fixos (mesmos do aviso "Poder <1.5 por Ph" em /mineradores/:slug)
 // -- independente da cor de nível/raridade da linha. Exportado daqui (em vez
 // de duplicado) pra ser reaproveitado também no badge de qualidade de
