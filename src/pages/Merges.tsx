@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import Card from '../components/Card'
+import SortDropdown, { type SortDropdownOption } from '../components/SortDropdown'
 import { formatPower } from '../utils/formatPower'
 import { parseMinersInventory } from '../utils/parseMinersInventory'
 import { parsePartsInventory } from '../utils/parsePartsInventory'
@@ -15,10 +16,17 @@ import {
   writeRealForgeLevel,
 } from '../utils/mergesStorage'
 import { readStoredPartPrices } from '../utils/partPriceStorage'
-import { computeMergeNeeds, type MergeNeed } from '../utils/computeMergeNeeds'
+import {
+  buildPartsOwnedMap,
+  computeMergeNeeds,
+  simulateMergeChain,
+  type ChainSimulation,
+  type MergeNeed,
+  type PartNeed,
+} from '../utils/computeMergeNeeds'
 import {
   FORGE_LEVELS,
-  calculateMergeCostTable,
+  getMinerPowerAtLevel,
   getRatioColor,
   partImagePath,
   type CraftingPrices,
@@ -42,44 +50,126 @@ const STATUS_TABS: { key: StatusFilter; label: string }[] = [
   { key: 'copies-missing', label: 'Mineradores não prontas' },
 ]
 
-// Sub-componente da "Cadeia Completa" -- reaproveita calculateMergeCostTable
-// (mesma fórmula recursiva de finalCost de /mineradores/:slug) a partir do
-// nível já possuído, assumindo que as cópias intermediárias vêm de merges
-// anteriores dentro dessa mesma cadeia (não de compra avulsa).
+// Mesmas faixas de getRatioColor (verde < 1.5, laranja 1.5-3.0, vermelho >
+// 3.0) reaproveitadas pro filtro de qualidade -- "Válidos" = verde ou
+// laranja (exclui só o vermelho), "Ótimos" = só verde.
+type QualityFilter = 'all' | 'valid' | 'great'
+
+const QUALITY_TABS: { key: QualityFilter; label: string }[] = [
+  { key: 'all', label: 'Todos' },
+  { key: 'valid', label: 'Válidos' },
+  { key: 'great', label: 'Ótimos' },
+]
+
+function passesQualityFilter(ratio: number, filter: QualityFilter): boolean {
+  if (filter === 'great') return ratio < 1.5
+  if (filter === 'valid') return ratio <= 3.0
+  return true
+}
+
+type SortOption = 'padrao' | 'custo-beneficio'
+
+const SORT_OPTIONS: SortDropdownOption<SortOption>[] = [
+  { value: 'padrao', label: 'Nome (A-Z)' },
+  { value: 'custo-beneficio', label: 'Custo-benefício' },
+]
+
+// Um passo da "Cadeia Completa" expandida -- mesmo estilo compacto dos
+// cards principais, reaproveitando os campos já calculados por
+// simulateMergeChain (cópias derivadas de merges anteriores, peças reais do
+// inventário, ratio de qualidade).
+function ChainStepRow({ step }: { step: ChainSimulation['steps'][number] }) {
+  return (
+    <div className="rounded-md border border-slate-800 bg-slate-950/60 p-2.5 text-xs">
+      <div className="flex items-center justify-between font-semibold text-slate-200">
+        <span>
+          {levelLabel(step.fromLevel)} -&gt; Nível {step.toLevel}
+        </span>
+        <span
+          className="rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white"
+          style={{ backgroundColor: getRatioColor(step.ratioPower) }}
+        >
+          {step.ratioPower.toFixed(2)} RLT/Ph
+        </span>
+      </div>
+
+      <div className="mt-1.5 flex items-center justify-between">
+        <span className="text-slate-400">Cópias</span>
+        <span className={step.missingCopies > 0 ? 'text-red-400' : 'text-emerald-400'}>
+          {step.availableCopies} / {step.requiredCopies}
+          {step.missingCopies > 0 && ` (faltam ${step.missingCopies})`}
+        </span>
+      </div>
+
+      {step.partsNeeded.map((p: PartNeed) => (
+        <div key={`${p.rarity}-${p.type}`} className="mt-1 flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <img
+              src={resolveAssetUrl(partImagePath(p.type, p.rarity))}
+              alt={`${p.rarity} ${p.type}`}
+              className="h-4 w-4 object-contain"
+            />
+            <span className="text-slate-300">
+              {p.owned}/{p.needed}
+            </span>
+          </div>
+          <span className={p.missing > 0 ? 'text-red-400' : 'text-emerald-400'}>
+            {p.missing > 0 ? `faltam ${p.missing} (${formatRLT(p.missingCost)} RLT)` : 'completo'}
+          </span>
+        </div>
+      ))}
+
+      <div className="mt-1 flex items-center justify-between">
+        <span className="text-slate-400">Taxa de merge</span>
+        <span className="text-slate-200">{formatRLT(step.mergeFeeCost)} RLT</span>
+      </div>
+    </div>
+  )
+}
+
+// "Cadeia Completa" expandida -- lista todos os passos entre o nível atual
+// e o máximo disponível (reaproveitando calculateMergeCostTable via
+// simulateMergeChain), com o resumo (poder ganho, custo total teórico) no
+// topo e o detalhe de cada passo abaixo.
 function FullChain({
   miner,
   currentLevel,
-  forgeDiscount,
-  partPrices,
-  craftingPrices,
+  simulation,
 }: {
   miner: Miner
   currentLevel: number
-  forgeDiscount: number
-  partPrices: Record<string, number>
-  craftingPrices: CraftingPrices
+  simulation: ChainSimulation
 }) {
-  const chain = calculateMergeCostTable(miner, forgeDiscount, partPrices, craftingPrices, {
-    fromLevel: currentLevel,
-  })
+  if (simulation.steps.length === 0) return null
 
-  if (chain.length === 0) return null
-
-  const last = chain[chain.length - 1]
-  const totalCost = last.finalCost
+  const last = simulation.steps[simulation.steps.length - 1]
+  const currentPower = getMinerPowerAtLevel(miner, currentLevel)
+  const powerGained = last.power - currentPower
 
   return (
-    <div className="mt-3 space-y-1.5 border-t border-slate-800 pt-3 text-sm">
-      <p className="text-xs text-slate-400">
-        Nível {currentLevel === 0 ? 'Base' : currentLevel} -&gt; Nível {last.merge.level} (máximo)
-      </p>
-      <div className="flex items-center justify-between">
-        <span className="text-slate-400">Poder final</span>
-        <span className="text-white">{formatPower(last.merge.power)}</span>
+    <div className="mt-3 space-y-2 border-t border-slate-800 pt-3">
+      <div className="space-y-1 text-sm">
+        <p className="text-xs text-slate-400">
+          {levelLabel(currentLevel)} -&gt; Nível {last.toLevel} (máximo)
+        </p>
+        <div className="flex items-center justify-between">
+          <span className="text-slate-400">Poder final</span>
+          <span className="text-white">{formatPower(last.power)}</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-slate-400">Ganho de poder</span>
+          <span className="text-emerald-400">+{formatPower(powerGained)}</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-slate-400">Custo total acumulado</span>
+          <span className="text-white">{formatRLT(last.finalCost)} RLT</span>
+        </div>
       </div>
-      <div className="flex items-center justify-between">
-        <span className="text-slate-400">Custo total acumulado</span>
-        <span className="text-white">{formatRLT(totalCost)} RLT</span>
+
+      <div className="space-y-1.5">
+        {simulation.steps.map((step) => (
+          <ChainStepRow key={step.toLevel} step={step} />
+        ))}
       </div>
     </div>
   )
@@ -105,6 +195,8 @@ export default function Merges() {
   const [realForgeLevel, setRealForgeLevel] = useState<number>(() => readRealForgeLevel())
   const [partPrices] = useState<Record<string, number>>(() => readStoredPartPrices())
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ready')
+  const [qualityFilter, setQualityFilter] = useState<QualityFilter>('all')
+  const [sortOption, setSortOption] = useState<SortOption>('padrao')
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set())
 
   function toggleExpanded(minerId: string) {
@@ -195,16 +287,48 @@ export default function Merges() {
     return counts
   }, [mergeNeeds])
 
-  const filteredMergeNeeds = useMemo(
-    () => mergeNeeds.filter((need) => need.status === statusFilter),
-    [mergeNeeds, statusFilter],
-  )
+  const filteredMergeNeeds = useMemo(() => {
+    const filtered = mergeNeeds.filter(
+      (need) => need.status === statusFilter && passesQualityFilter(need.nextRatioPower, qualityFilter),
+    )
+    if (sortOption === 'custo-beneficio') {
+      return [...filtered].sort((a, b) => a.nextRatioPower - b.nextRatioPower)
+    }
+    return filtered
+  }, [mergeNeeds, statusFilter, qualityFilter, sortOption])
 
   const minersById = useMemo(() => {
     const map = new Map<string, Miner>()
     if (minersData) for (const m of minersData.miners) map.set(m.id, m)
     return map
   }, [minersData])
+
+  const partsOwnedMap = useMemo(() => buildPartsOwnedMap(partsInventory), [partsInventory])
+
+  // Simulação de "até onde dá pra subir só com as cópias já possuídas" --
+  // alimenta tanto a frase de "Alcance Real" quanto a lista detalhada da
+  // "Cadeia Completa" (mesmos dados, sem duplicar o cálculo).
+  const chainSimulations = useMemo(() => {
+    const map = new Map<string, ChainSimulation>()
+    if (!craftingPrices) return map
+    for (const need of mergeNeeds) {
+      const miner = minersById.get(need.minerId)
+      if (!miner) continue
+      map.set(
+        need.minerId,
+        simulateMergeChain(
+          miner,
+          need.currentLevel,
+          need.ownedAtCurrentLevel,
+          partsOwnedMap,
+          forgeDiscount,
+          partPrices,
+          craftingPrices,
+        ),
+      )
+    }
+    return map
+  }, [mergeNeeds, minersById, partsOwnedMap, forgeDiscount, partPrices, craftingPrices])
 
   if (loadError) {
     return (
@@ -303,6 +427,34 @@ export default function Merges() {
                     {tab.label} ({statusCounts[tab.key]})
                   </button>
                 ))}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap gap-1.5">
+                  {QUALITY_TABS.map((tab) => (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => setQualityFilter(tab.key)}
+                      className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                        qualityFilter === tab.key
+                          ? 'bg-slate-600 text-white'
+                          : 'bg-slate-800/60 text-slate-400 hover:bg-slate-700'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex flex-col items-end gap-1">
+                  <SortDropdown options={SORT_OPTIONS} value={sortOption} onChange={setSortOption} />
+                  {sortOption === 'custo-beneficio' && (
+                    <p className="text-[10px] text-slate-500">
+                      Custo-benefício isolado (sem considerar bônus de sala)
+                    </p>
+                  )}
+                </div>
               </div>
 
               {filteredMergeNeeds.length === 0 ? (
@@ -406,6 +558,43 @@ export default function Merges() {
                           </div>
                         )}
 
+                        {(() => {
+                          const simulation = chainSimulations.get(need.minerId)
+                          if (
+                            !simulation ||
+                            need.ownedAtCurrentLevel <= 1 ||
+                            simulation.totalMerges === 0
+                          ) {
+                            return null
+                          }
+                          const finalStep = simulation.steps.find(
+                            (s) => s.toLevel === simulation.reachedLevel,
+                          )
+                          const finalStepPartsComplete = finalStep?.partsNeeded.every(
+                            (p) => p.missing === 0,
+                          )
+                          return (
+                            <div className="mt-3 border-t border-slate-800 pt-3 text-xs">
+                              <p className="text-slate-300">
+                                Com suas {need.ownedAtCurrentLevel} cópias hoje, dá pra fundir até
+                                Nível {simulation.reachedLevel} ({simulation.totalMerges}{' '}
+                                {simulation.totalMerges === 1 ? 'merge' : 'merges'}, sobrando{' '}
+                                {simulation.leftoverCopies}×), gastando{' '}
+                                {formatRLT(simulation.totalFeeCost)} RLT em fusões (peças à parte).
+                              </p>
+                              {finalStep && (
+                                <p
+                                  className={`mt-1 ${finalStepPartsComplete ? 'text-emerald-400' : 'text-amber-400'}`}
+                                >
+                                  {finalStepPartsComplete
+                                    ? 'Peças do passo final: completas.'
+                                    : 'Peças do passo final: faltam peças no inventário.'}
+                                </p>
+                              )}
+                            </div>
+                          )
+                        })()}
+
                         {miner && (
                           <div className="mt-3 border-t border-slate-800 pt-3">
                             <button
@@ -415,15 +604,18 @@ export default function Merges() {
                             >
                               {isExpanded ? '- Ocultar cadeia completa' : '+ Ver cadeia completa'}
                             </button>
-                            {isExpanded && (
-                              <FullChain
-                                miner={miner}
-                                currentLevel={need.currentLevel}
-                                forgeDiscount={forgeDiscount}
-                                partPrices={partPrices}
-                                craftingPrices={craftingPrices}
-                              />
-                            )}
+                            {isExpanded &&
+                              (() => {
+                                const simulation = chainSimulations.get(need.minerId)
+                                if (!simulation) return null
+                                return (
+                                  <FullChain
+                                    miner={miner}
+                                    currentLevel={need.currentLevel}
+                                    simulation={simulation}
+                                  />
+                                )
+                              })()}
                           </div>
                         )}
                       </div>

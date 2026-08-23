@@ -1,4 +1,4 @@
-import type { Miner } from '../types/miner'
+import type { Miner, MinerMerge } from '../types/miner'
 import type { MatchedMinerEntry } from './matchMinersInventory'
 import type { PartInventoryEntry } from './parsePartsInventory'
 import {
@@ -42,6 +42,128 @@ export interface MergeNeed {
   nextRatioPower: number
 }
 
+// Compartilhado entre computeMergeNeeds e simulateMergeChain -- as duas
+// contas de "peças que faltam pra esse nível de merge" são idênticas.
+function computePartsNeeded(
+  merge: MinerMerge,
+  partsOwned: Map<string, number>,
+  forgeDiscount: number,
+  partPrices: Record<string, number>,
+  craftingPrices: CraftingPrices,
+): PartNeed[] {
+  return getActiveParts(merge).map((p) => {
+    const owned = partsOwned.get(`${p.rarity}:${p.type}`) ?? 0
+    const missing = Math.max(0, p.count - owned)
+    const price = getPartPrice(p.rarity, p.type, partPrices, craftingPrices)
+    const missingCost = missing * price * (1 - forgeDiscount)
+    return { type: p.type, rarity: p.rarity, needed: p.count, owned, missing, missingCost }
+  })
+}
+
+export function buildPartsOwnedMap(partsInventory: PartInventoryEntry[]): Map<string, number> {
+  const partsOwned = new Map<string, number>()
+  for (const p of partsInventory) {
+    partsOwned.set(`${p.rarity}:${p.type}`, p.quantity)
+  }
+  return partsOwned
+}
+
+export interface ChainStepDetail {
+  fromLevel: number
+  toLevel: number
+  requiredCopies: number
+  // Cópias do fromLevel disponíveis NESSE PONTO da simulação -- pro
+  // primeiro passo, é o que o jogador realmente possui; pros passos
+  // seguintes, é derivado assumindo que os passos anteriores foram
+  // completados via merge (não compra extra), reaproveitando a mesma
+  // divisão por requiredPreviousCount usada no cálculo de finalCost.
+  availableCopies: number
+  missingCopies: number
+  mergesPerformed: number
+  partsNeeded: PartNeed[]
+  mergeFeeCost: number
+  ratioPower: number
+  power: number
+  // Custo acumulado TEÓRICO (calculateMergeCostTable, a partir de
+  // fromLevel) pra chegar até esse passo -- não depende de cópias
+  // realmente possuídas, é o custo "cadeia completa" mostrado no resumo.
+  finalCost: number
+}
+
+export interface ChainSimulation {
+  steps: ChainStepDetail[]
+  // Até onde a simulação avança de fato SÓ com as cópias já possuídas --
+  // "Alcance Real".
+  reachedLevel: number
+  totalMerges: number
+  totalFeeCost: number
+  leftoverCopies: number
+}
+
+// Simula subir a cadeia de merge de um minerador usando só as cópias que o
+// jogador já possui no nível atual -- reaproveita calculateMergeCostTable
+// (mesma fórmula recursiva de finalCost/ratioPower) e, pra cada passo,
+// deriva quantas cópias do próximo nível resultariam de mesclar as cópias
+// disponíveis em grupos de requiredPreviousCount (igual à conta já feita
+// internamente por finalCost, só que aplicada a CONTAGEM em vez de custo).
+// Uma vez que as cópias disponíveis zeram, ficam zeradas nos passos
+// seguintes (floor(0/N) = 0), o que automaticamente marca onde a cadeia
+// real para -- sem precisar de uma flag de "parou aqui".
+export function simulateMergeChain(
+  miner: Miner,
+  currentLevel: number,
+  ownedAtCurrentLevel: number,
+  partsOwned: Map<string, number>,
+  forgeDiscount: number,
+  partPrices: Record<string, number>,
+  craftingPrices: CraftingPrices,
+): ChainSimulation {
+  const sortedMerges = [...miner.merges]
+    .filter((mg) => mg.level > currentLevel)
+    .sort((a, b) => a.level - b.level)
+  const costTable = calculateMergeCostTable(miner, forgeDiscount, partPrices, craftingPrices, {
+    fromLevel: currentLevel,
+  })
+
+  let copies = ownedAtCurrentLevel
+  let reachedLevel = currentLevel
+  let totalMerges = 0
+  let totalFeeCost = 0
+  const steps: ChainStepDetail[] = []
+
+  for (let i = 0; i < sortedMerges.length; i++) {
+    const merge = sortedMerges[i]
+    const row = costTable[i]
+    const fromLevel = i === 0 ? currentLevel : sortedMerges[i - 1].level
+    const availableCopies = copies
+    const mergesPerformed = Math.floor(availableCopies / merge.requiredPreviousCount)
+    const missingCopies = Math.max(0, merge.requiredPreviousCount - availableCopies)
+
+    steps.push({
+      fromLevel,
+      toLevel: merge.level,
+      requiredCopies: merge.requiredPreviousCount,
+      availableCopies,
+      missingCopies,
+      mergesPerformed,
+      partsNeeded: computePartsNeeded(merge, partsOwned, forgeDiscount, partPrices, craftingPrices),
+      mergeFeeCost: row.mergeFeeCost,
+      ratioPower: row.ratioPower,
+      power: merge.power,
+      finalCost: row.finalCost,
+    })
+
+    if (mergesPerformed > 0) {
+      reachedLevel = merge.level
+      totalMerges += mergesPerformed
+      totalFeeCost += mergesPerformed * row.mergeFeeCost
+    }
+    copies = mergesPerformed
+  }
+
+  return { steps, reachedLevel, totalMerges, totalFeeCost, leftoverCopies: copies }
+}
+
 // Pra cada minerador mergeable que o jogador possui (em qualquer nível,
 // incluindo base), calcula o que falta pro PRÓXIMO nível de merge --
 // reaproveita getActiveParts/getPartPrice de minerMergeCalculator.ts (mesma
@@ -71,10 +193,7 @@ export function computeMergeNeeds(
     }
   }
 
-  const partsOwned = new Map<string, number>()
-  for (const p of partsInventory) {
-    partsOwned.set(`${p.rarity}:${p.type}`, p.quantity)
-  }
+  const partsOwned = buildPartsOwnedMap(partsInventory)
 
   const needs: MergeNeed[] = []
 
@@ -93,13 +212,7 @@ export function computeMergeNeeds(
     const ownedAtCurrentLevel = ownedByNameLevel.get(`${name}::${currentLevel}`) ?? 0
     const missingCopies = Math.max(0, nextMerge.requiredPreviousCount - ownedAtCurrentLevel)
 
-    const partsNeeded: PartNeed[] = getActiveParts(nextMerge).map((p) => {
-      const owned = partsOwned.get(`${p.rarity}:${p.type}`) ?? 0
-      const missing = Math.max(0, p.count - owned)
-      const price = getPartPrice(p.rarity, p.type, partPrices, craftingPrices)
-      const missingCost = missing * price * (1 - forgeDiscount)
-      return { type: p.type, rarity: p.rarity, needed: p.count, owned, missing, missingCost }
-    })
+    const partsNeeded = computePartsNeeded(nextMerge, partsOwned, forgeDiscount, partPrices, craftingPrices)
 
     const totalMissingPartsCost = partsNeeded.reduce((sum, p) => sum + p.missingCost, 0)
     const mergeFeeCost = nextMerge.mergeFee * (1 - forgeDiscount)

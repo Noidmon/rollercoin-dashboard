@@ -184,6 +184,14 @@ function powerGhSToPhS(powerGhS: number): number {
   return powerGhS / 1_000_000
 }
 
+// Poder (Gh/s) de um minerador em um nível específico -- 0 = base,
+// N = nível de merge. Usado em /merges pra calcular o ganho de poder de uma
+// cadeia de merges a partir do nível atual.
+export function getMinerPowerAtLevel(miner: Pick<Miner, 'power' | 'merges'>, level: number): number {
+  if (level === 0) return miner.power
+  return miner.merges.find((mg) => mg.level === level)?.power ?? 0
+}
+
 export interface MergeCostRow {
   merge: MinerMerge
   totalPieces: number
