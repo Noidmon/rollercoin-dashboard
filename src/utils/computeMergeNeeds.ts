@@ -4,6 +4,8 @@ import type { PartInventoryEntry } from './parsePartsInventory'
 import {
   calculateMergeCostTable,
   getActiveParts,
+  getMinerBonusAtLevel,
+  getMinerPowerAtLevel,
   getPartPrice,
   type CraftingPrices,
   type PartType,
@@ -45,6 +47,12 @@ export interface MergeNeed {
   // calculateMergeCostTable usada em /mineradores/:slug, reaproveitada aqui
   // pro badge de qualidade (sem duplicar a conta de finalCost/ratioPower).
   nextRatioPower: number
+  // Poder/bônus do nível atual e do próximo (miners.json) -- pra linha
+  // "atual -> próximo" no card e pra ordenação por Poder/Bônus.
+  currentPower: number
+  nextPower: number
+  currentBonus: number
+  nextBonus: number
 }
 
 // Compartilhado entre computeMergeNeeds e simulateMergeChain -- as duas
@@ -100,6 +108,12 @@ export interface ChainStepDetail {
   // fromLevel) pra chegar até esse passo -- não depende de cópias
   // realmente possuídas, é o custo "cadeia completa" mostrado no resumo.
   finalCost: number
+  // Poder/bônus de origem (fromLevel) e bônus de destino (toLevel) desse
+  // passo específico -- power (acima) já é o de destino. Usado pra linha
+  // local "atual -> próximo" de cada passo da Cadeia Completa.
+  fromPower: number
+  fromBonus: number
+  bonus: number
 }
 
 export interface ChainSimulation {
@@ -163,6 +177,9 @@ export function simulateMergeChain(
       ratioPower: row.ratioPower,
       power: merge.power,
       finalCost: row.finalCost,
+      fromPower: getMinerPowerAtLevel(miner, fromLevel),
+      fromBonus: getMinerBonusAtLevel(miner, fromLevel),
+      bonus: merge.bonus,
     })
 
     if (mergesPerformed > 0) {
@@ -259,6 +276,10 @@ export function computeMergeNeeds(
       ready,
       status,
       nextRatioPower,
+      currentPower: getMinerPowerAtLevel(miner, currentLevel),
+      nextPower: nextMerge.power,
+      currentBonus: getMinerBonusAtLevel(miner, currentLevel),
+      nextBonus: nextMerge.bonus,
     })
   }
 

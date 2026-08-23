@@ -59,6 +59,47 @@ function DestinationRarity({ level }: { level: number }) {
   )
 }
 
+// Linha "atual -> próximo (+ganho)" de Poder e Bônus -- usada tanto no
+// cabeçalho do card principal quanto em cada passo da Cadeia Completa
+// (mesmo componente, sem duplicar o formato). Verde no valor de destino e
+// no ganho, mesmo padrão de "Ganho de poder" já usado no resumo da cadeia.
+function PowerBonusLine({
+  fromPower,
+  toPower,
+  fromBonus,
+  toBonus,
+}: {
+  fromPower: number
+  toPower: number
+  fromBonus: number
+  toBonus: number
+}) {
+  return (
+    <div className="mt-2 space-y-0.5 text-xs">
+      <div className="flex items-center justify-between">
+        <span className="text-slate-400">Poder</span>
+        <span className="text-slate-300">
+          {formatPower(fromPower)} -&gt;{' '}
+          <span className="font-semibold text-emerald-400">{formatPower(toPower)}</span>{' '}
+          <span className="text-emerald-400">(+{formatPower(toPower - fromPower)})</span>
+        </span>
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-slate-400">Bônus</span>
+        <span className="text-slate-300">
+          {fromBonus}% -&gt; <span className="font-semibold text-emerald-400">{toBonus}%</span>{' '}
+          {/* toFixed(4)+Number sanitiza ruído de ponto flutuante da subtração
+          (ex: 0.8 - 0.5 = 0.30000000000000004) sem arredondar de verdade,
+          já que bônus reais nunca têm mais de 2-3 casas decimais. */}
+          <span className="text-emerald-400">
+            (+{Number((toBonus - fromBonus).toFixed(4))}%)
+          </span>
+        </span>
+      </div>
+    </div>
+  )
+}
+
 // Linha alternativa "ou craftando do seu estoque" abaixo de cada peça
 // faltante -- reaproveita simulatePartCrafting (já calculado em
 // PartNeed.craftAlternative por computeMergeNeeds.ts, sem duplicar aqui).
@@ -117,11 +158,21 @@ function passesQualityFilter(ratio: number, filter: QualityFilter): boolean {
   return true
 }
 
-type SortOption = 'padrao' | 'custo-beneficio'
+type SortOption =
+  | 'padrao'
+  | 'custo-beneficio'
+  | 'poder_desc'
+  | 'poder_asc'
+  | 'bonus_desc'
+  | 'bonus_asc'
 
 const SORT_OPTIONS: SortDropdownOption<SortOption>[] = [
   { value: 'padrao', label: 'Nome (A-Z)' },
   { value: 'custo-beneficio', label: 'Custo-benefício' },
+  { value: 'poder_desc', label: 'Poder ↓' },
+  { value: 'poder_asc', label: 'Poder ↑' },
+  { value: 'bonus_desc', label: 'Bônus ↓' },
+  { value: 'bonus_asc', label: 'Bônus ↑' },
 ]
 
 // Um passo da "Cadeia Completa" expandida -- mesmo estilo compacto dos
@@ -142,6 +193,13 @@ function ChainStepRow({ step }: { step: ChainSimulation['steps'][number] }) {
           {step.ratioPower.toFixed(2)} RLT/Ph
         </span>
       </div>
+
+      <PowerBonusLine
+        fromPower={step.fromPower}
+        toPower={step.power}
+        fromBonus={step.fromBonus}
+        toBonus={step.bonus}
+      />
 
       <div className="mt-1.5 flex items-center justify-between">
         <span className="text-slate-400">Cópias</span>
@@ -392,10 +450,25 @@ export default function Merges() {
     const filtered = mergeNeeds.filter(
       (need) => need.status === statusFilter && passesQualityFilter(need.nextRatioPower, qualityFilter),
     )
-    if (sortOption === 'custo-beneficio') {
-      return [...filtered].sort((a, b) => a.nextRatioPower - b.nextRatioPower)
+    // Poder/Bônus usam o valor do PRÓXIMO nível de merge disponível --
+    // desempate de 2 níveis na mesma direção do sort ativo, mesmo padrão já
+    // usado em /mineradores (getEffectivePower/getEffectiveBonus lá, aqui
+    // nextPower/nextBonus porque o critério é por instância possuída, não
+    // pelo nível mais forte absoluto do minerador).
+    switch (sortOption) {
+      case 'custo-beneficio':
+        return [...filtered].sort((a, b) => a.nextRatioPower - b.nextRatioPower)
+      case 'poder_desc':
+        return [...filtered].sort((a, b) => b.nextPower - a.nextPower || b.nextBonus - a.nextBonus)
+      case 'poder_asc':
+        return [...filtered].sort((a, b) => a.nextPower - b.nextPower || a.nextBonus - b.nextBonus)
+      case 'bonus_desc':
+        return [...filtered].sort((a, b) => b.nextBonus - a.nextBonus || b.nextPower - a.nextPower)
+      case 'bonus_asc':
+        return [...filtered].sort((a, b) => a.nextBonus - b.nextBonus || a.nextPower - b.nextPower)
+      default:
+        return filtered
     }
-    return filtered
   }, [mergeNeeds, statusFilter, qualityFilter, sortOption])
 
   const minersById = useMemo(() => {
@@ -625,6 +698,13 @@ export default function Merges() {
                             </span>
                           </div>
                         </div>
+
+                        <PowerBonusLine
+                          fromPower={need.currentPower}
+                          toPower={need.nextPower}
+                          fromBonus={need.currentBonus}
+                          toBonus={need.nextBonus}
+                        />
 
                         <div className="mt-3 text-sm">
                           <div className="flex items-center justify-between">

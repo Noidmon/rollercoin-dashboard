@@ -212,6 +212,13 @@ export function getMinerPowerAtLevel(miner: Pick<Miner, 'power' | 'merges'>, lev
   return miner.merges.find((mg) => mg.level === level)?.power ?? 0
 }
 
+// Mesma lógica de getMinerPowerAtLevel, pro bônus (%) do minerador nesse
+// nível -- usado em /merges pra mostrar a linha "bônus atual -> próximo".
+export function getMinerBonusAtLevel(miner: Pick<Miner, 'bonus' | 'merges'>, level: number): number {
+  if (level === 0) return miner.bonus
+  return miner.merges.find((mg) => mg.level === level)?.bonus ?? 0
+}
+
 export interface MergeCostRow {
   merge: MinerMerge
   totalPieces: number
