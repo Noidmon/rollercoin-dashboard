@@ -8,7 +8,7 @@ import {
 } from 'react'
 import { getPlayerPower } from '../services/api'
 
-type PlayerData = Awaited<ReturnType<typeof getPlayerPower>>
+export type PlayerData = Awaited<ReturnType<typeof getPlayerPower>>
 
 const STORAGE_KEY = 'rollercoin-dashboard:nickname'
 

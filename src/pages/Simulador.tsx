@@ -5,24 +5,46 @@ import { getLeagueInfo } from '../data/leagues'
 import { formatPower } from '../utils/formatPower'
 import Card from '../components/Card'
 import RoomBackground from '../components/RoomBackground'
+import RoomRacksLayer from '../components/RoomRacksLayer'
+import { roomConfigToRackPlacements } from '../utils/roomLayout'
+import type { PlayerData } from '../context/PlayerContext'
 
-// Preview temporário da Fase B (fundo visual da sala) -- só pra validação
-// visual das duas composições possíveis (Sala 0 vs Salas 1-3, que
-// compartilham a mesma decoração). A integração de verdade com racks/
-// mineradores reais da conta vem numa próxima etapa; remover este bloco
-// quando isso acontecer.
-function RoomBackgroundPreview() {
+// Visual real da sala: fundo (RoomBackground) + racks/mineradores reais da
+// conta (RoomRacksLayer) sobrepostos no mesmo container 720x450. Uma seção
+// por sala que a conta realmente tem desbloqueada (room_level 0, 1, 2...),
+// nunca as duas composições lado a lado como no preview temporário anterior
+// -- cada sala mostra só a composição (Sala 0 ou Salas 1-3) que bate com o
+// room_level real dela.
+function RoomVisualization({ roomConfig }: { roomConfig: PlayerData['roomConfig'] }) {
+  const placements = roomConfigToRackPlacements(roomConfig)
+
+  const roomLevels = [...new Set(placements.map((p) => p.roomLevel))].sort((a, b) => a - b)
+
+  if (roomLevels.length === 0) {
+    return (
+      <Card title="Sala">
+        <p className="text-sm text-slate-400">Nenhum rack encontrado no room-config desta conta.</p>
+      </Card>
+    )
+  }
+
   return (
-    <Card title="Fase B: Fundo da Sala (preview temporário)">
+    <Card title="Sala">
       <div className="flex flex-wrap gap-4">
-        <div>
-          <p className="mb-2 text-xs text-slate-400">Sala 0</p>
-          <RoomBackground roomLevel={0} />
-        </div>
-        <div>
-          <p className="mb-2 text-xs text-slate-400">Salas 1-3 (idênticas)</p>
-          <RoomBackground roomLevel={1} />
-        </div>
+        {roomLevels.map((level) => (
+          <div key={level}>
+            <p className="mb-2 text-xs text-slate-400">
+              Sala {level} ({placements.filter((p) => p.roomLevel === level).length} racks)
+            </p>
+            <div className="relative" style={{ width: 720, height: 450 }}>
+              <RoomBackground roomLevel={level} />
+              <RoomRacksLayer
+                placements={placements.filter((p) => p.roomLevel === level)}
+                miners={roomConfig.miners}
+              />
+            </div>
+          </div>
+        ))}
       </div>
     </Card>
   )
@@ -63,9 +85,6 @@ export default function Simulador() {
     return (
       <div>
         <h1 className="text-2xl font-semibold text-white">Simulador</h1>
-        <div className="mt-4">
-          <RoomBackgroundPreview />
-        </div>
         <p className="mt-4 text-sm text-slate-400">
           Digite um nickname no menu lateral para começar.
         </p>
@@ -141,7 +160,7 @@ export default function Simulador() {
       <h1 className="text-2xl font-semibold text-white">Simulador</h1>
 
       <div className="mt-4 space-y-4">
-        <RoomBackgroundPreview />
+        <RoomVisualization roomConfig={playerData.roomConfig} />
 
         <Card title="Poder Permanente Atual">
           <p className="text-2xl font-bold text-white">{formatPower(currentTotal)}</p>

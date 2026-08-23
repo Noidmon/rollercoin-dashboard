@@ -6,6 +6,21 @@ export interface Miner {
   bonus_percent?: number
   placement?: {
     user_rack_id?: string | null
+    // x/y: posição LOCAL ao rack (não à sala), em células -- só presentes
+    // quando o minerador está de fato posicionado num rack. Usado pra
+    // renderizar a posição visual dentro do RoomRacksLayer.
+    x?: number
+    y?: number
+  }
+  // Largura em células do minerador dentro do rack (1 ou 2) -- vem direto
+  // do room-config real, mesmo campo usado em src/types/miner.ts (`cells`
+  // no catálogo, `width` na instância posicionada).
+  width?: number
+  filename?: string
+  frames_data?: {
+    frame_width: number
+    frame_height: number
+    frames_count: number
   }
 }
 
@@ -13,6 +28,19 @@ export interface Rack {
   _id: string
   name?: string
   bonus: number
+  // Campos abaixo só vêm preenchidos quando lidos do room-config real (via
+  // roomConfigToRackPlacements) -- não usados no Simulador de "e se"
+  // hipotético, onde racks são só {_id,name,bonus}.
+  rack_id?: string
+  placement?: {
+    room_level: number
+    x: number
+    y: number
+  }
+  rack_info?: {
+    width: number
+    height: number
+  }
 }
 
 export interface RoomPowerBreakdown {
