@@ -58,6 +58,38 @@ export function partPriceKey(rarity: Rarity, type: PartType): string {
   return `${RARITY_LABEL[rarity]} ${TYPE_LABEL[type]}`
 }
 
+export const RARITIES: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
+export const PART_TYPES: PartType[] = ['fan', 'wire', 'hashboard']
+
+// Reconhece um texto tipo "Common" ou "epic" (case-insensitive) como Rarity.
+// Compartilhado entre os parsers de marketplace e de inventário de peças --
+// nenhum dos dois duplica essa lista de raridades/tipos por conta própria.
+export function parseRarityLabel(text: string): Rarity | null {
+  const normalized = text.trim().toLowerCase()
+  return RARITIES.includes(normalized as Rarity) ? (normalized as Rarity) : null
+}
+
+export function parseTypeLabel(text: string): PartType | null {
+  const normalized = text.trim().toLowerCase()
+  return PART_TYPES.includes(normalized as PartType) ? (normalized as PartType) : null
+}
+
+const PART_NAME_PATTERN = new RegExp(
+  `^(${RARITIES.map((r) => RARITY_LABEL[r]).join('|')}) (${PART_TYPES.map((t) => TYPE_LABEL[t]).join('|')})$`,
+  'i',
+)
+
+// Reconhece um texto tipo "Epic Fan" (uma linha só, raridade+tipo juntos,
+// formato usado no paste do marketplace).
+export function parsePartName(text: string): { rarity: Rarity; type: PartType } | null {
+  const match = text.match(PART_NAME_PATTERN)
+  if (!match) return null
+  const rarity = parseRarityLabel(match[1])
+  const type = parseTypeLabel(match[2])
+  if (!rarity || !type) return null
+  return { rarity, type }
+}
+
 // A raridade "do nível de merge" como um todo -- na prática quase todo
 // merge usa só 1 tipo de peça (fan OU wire OU hashboard); um punhado usa os
 // 3 ao mesmo tempo, sempre no mesmo level entre eles. Pega o maior level
@@ -112,7 +144,20 @@ export function getMergeLevelColor(level: number): string {
   return LEVEL_COLORS[level] ?? FALLBACK_LEVEL_COLOR
 }
 
-function getPartPrice(
+// Exportado -- reaproveitado em /merges pra calcular o custo só das peças
+// que faltam no inventário, sem duplicar a lógica de override/fallback.
+export function getPartPrice(
+  rarity: Rarity,
+  type: PartType,
+  overridePrices: Record<string, number>,
+  craftingPrices: CraftingPrices,
+): number {
+  const key = partPriceKey(rarity, type)
+  const override = overridePrices[key]
+  return override !== undefined ? override : craftingPrices[rarity][type]
+}
+
+function getPartPriceByLevel(
   type: PartType,
   level: number,
   overridePrices: Record<string, number>,
@@ -120,9 +165,7 @@ function getPartPrice(
 ): number {
   const rarity = levelToRarity(level)
   if (!rarity) return 0
-  const key = partPriceKey(rarity, type)
-  const override = overridePrices[key]
-  return override !== undefined ? override : craftingPrices[rarity][type]
+  return getPartPrice(rarity, type, overridePrices, craftingPrices)
 }
 
 // power dos mineradores/merges vem em Gh/s (mesma convenção de
@@ -153,9 +196,9 @@ export function calculateMergeCostTable(
   let previousFinalCost = 0
 
   for (const merge of sortedMerges) {
-    const fanPrice = getPartPrice('fan', merge.fanLevel, overridePrices, craftingPrices)
-    const wirePrice = getPartPrice('wire', merge.wireLevel, overridePrices, craftingPrices)
-    const hashboardPrice = getPartPrice(
+    const fanPrice = getPartPriceByLevel('fan', merge.fanLevel, overridePrices, craftingPrices)
+    const wirePrice = getPartPriceByLevel('wire', merge.wireLevel, overridePrices, craftingPrices)
+    const hashboardPrice = getPartPriceByLevel(
       'hashboard',
       merge.hashboardLevel,
       overridePrices,

@@ -20,6 +20,8 @@
 // Também aceita o formato antigo com links markdown, onde cada linha vem
 // como [texto](url) -- extrai só o texto antes de aplicar a mesma lógica.
 
+import { parsePartName } from './minerMergeCalculator'
+
 export interface ParsedPartPrice {
   name: string
   priceRLT: number
@@ -33,10 +35,6 @@ export interface ParseMarketplaceResult {
 const MARKDOWN_LINK_LINE_PATTERN = /^\[(.*)\]\(.*\)$/
 const FROM_PATTERN = /^from$/i
 const PRICE_PATTERN = /^([\d.,]+)\s*RLT$/i
-
-const RARITIES = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary']
-const TYPES = ['Fan', 'Wire', 'Hashboard']
-const PART_NAME_PATTERN = new RegExp(`^(${RARITIES.join('|')}) (${TYPES.join('|')})$`, 'i')
 
 // \s no JS já cobre espaço não-quebrável (U+00A0), que vem junto às vezes
 // quando o texto é copiado de uma página web -- sem essa normalização,
@@ -78,7 +76,7 @@ export function parseMarketplacePaste(raw: string): ParseMarketplaceResult {
       continue
     }
 
-    if (!PART_NAME_PATTERN.test(nameLine)) {
+    if (!parsePartName(nameLine)) {
       skippedCount++
       continue
     }

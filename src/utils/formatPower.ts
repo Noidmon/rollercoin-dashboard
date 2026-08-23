@@ -1,4 +1,4 @@
-const UNITS = ['Gh/s', 'Th/s', 'Ph/s', 'Eh/s', 'Zh/s', 'Yh/s'] as const
+export const UNITS = ['Gh/s', 'Th/s', 'Ph/s', 'Eh/s', 'Zh/s', 'Yh/s'] as const
 
 export function formatPower(value: number): string {
   let scaled = value
