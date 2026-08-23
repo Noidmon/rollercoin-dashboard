@@ -11,11 +11,7 @@ import {
   type MatchedMinerEntry,
   type ResolvedRoomMinerInstance,
 } from '../utils/matchMinersInventory'
-import {
-  computeRoomMergeImpact,
-  getRoomImpactColor,
-  type RoomMergeImpact,
-} from '../utils/roomMergeImpact'
+import { computeRoomMergeImpact, type RoomMergeImpact } from '../utils/roomMergeImpact'
 import type { Miner as RoomMiner, Rack } from '../utils/calculatePower'
 import type { MinerInventoryEntry } from '../utils/parseMinersInventory'
 import type { PartInventoryEntry } from '../utils/parsePartsInventory'
@@ -201,23 +197,23 @@ const STATUS_TABS: { key: StatusFilter; label: string }[] = [
   { key: 'copies-missing', label: 'Mineradores não prontas' },
 ]
 
-// Badge de qualidade agora é baseado no Impacto Real (não mais no Ratio
-// Poder isolado) -- e o Impacto Real é BINÁRIO (calculável com ganho ou
-// não), diferente das 3 faixas do Ratio Poder (verde/laranja/vermelho).
-// Por isso o filtro de qualidade também virou binário: "Válidos" = só
-// impacto real positivo confirmado (verde). "Ótimos" foi removido de
-// propósito -- com só 2 estados possíveis (verde/vermelho, fora o cinza de
-// "não calculável"), um terceiro filtro "Ótimos" idêntico a "Válidos"
-// seria redundante.
-type QualityFilter = 'all' | 'valid'
+// Mesmas faixas de getRatioColor (verde < 1.5, laranja 1.5-3.0, vermelho >
+// 3.0) reaproveitadas pro filtro de qualidade -- "Válidos" = verde ou
+// laranja (exclui só o vermelho), "Ótimos" = só verde. Badge/filtro
+// deliberadamente baseados no Ratio Poder isolado (não no Impacto Real
+// binário) -- o Ratio Poder é sempre calculável, independente de o
+// minerador estar fisicamente na sala hoje ou não.
+type QualityFilter = 'all' | 'valid' | 'great'
 
 const QUALITY_TABS: { key: QualityFilter; label: string }[] = [
   { key: 'all', label: 'Todos' },
   { key: 'valid', label: 'Válidos' },
+  { key: 'great', label: 'Ótimos' },
 ]
 
-function passesQualityFilter(impact: RoomMergeImpact | undefined, filter: QualityFilter): boolean {
-  if (filter === 'valid') return !!impact?.calculable && impact.deltaPower > 0
+function passesQualityFilter(ratio: number, filter: QualityFilter): boolean {
+  if (filter === 'great') return ratio < 1.5
+  if (filter === 'valid') return ratio <= 3.0
   return true
 }
 
@@ -709,7 +705,7 @@ export default function Merges() {
   const filteredMergeNeeds = useMemo(() => {
     const filtered = mergeNeeds.filter((need) => {
       if (need.status !== statusFilter) return false
-      if (!passesQualityFilter(roomMergeImpacts.get(need.minerId), qualityFilter)) return false
+      if (!passesQualityFilter(need.nextRatioPower, qualityFilter)) return false
       const minReachLevel = REACH_TABS.find((tab) => tab.key === reachFilter)?.minLevel ?? 0
       if (minReachLevel > 0) {
         const reachedLevel = chainSimulations.get(need.minerId)?.reachedLevel ?? need.currentLevel
@@ -963,21 +959,13 @@ export default function Merges() {
                                 Pronto
                               </span>
                             )}
-                            {(() => {
-                              const impact = roomMergeImpacts.get(need.minerId)
-                              const label = impact?.calculable
-                                ? `${impact.deltaPower >= 0 ? '+' : ''}${impact.deltaPercent.toFixed(2)}%`
-                                : 'N/D'
-                              return (
-                                <span
-                                  className="rounded-full px-2 py-1 text-[10px] font-bold text-white"
-                                  style={{ backgroundColor: getRoomImpactColor(impact) }}
-                                  title="Qualidade do próximo merge (Impacto Real na sala)"
-                                >
-                                  {label}
-                                </span>
-                              )
-                            })()}
+                            <span
+                              className="rounded-full px-2 py-1 text-[10px] font-bold text-white"
+                              style={{ backgroundColor: getRatioColor(need.nextRatioPower) }}
+                              title="Qualidade do próximo merge (custo por Ph/s)"
+                            >
+                              {need.nextRatioPower.toFixed(2)} RLT/Ph
+                            </span>
                           </div>
                         </div>
 
