@@ -11,16 +11,37 @@
 // sincronizados. Mesmo padrão a ser reaproveitado pros +8000 mineradores no
 // futuro (manifesto + script de sync, não R2).
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join, basename, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
 const ICONS_DIR = join(ROOT, 'public', 'rc-icons')
+const MINERS_ICONS_DIR = join(ROOT, 'public', 'miners-icons')
 const MANIFEST_PATH = join(ROOT, 'src', 'data', 'assetManifest.ts')
 
-const SYNCED_REFERENCE_TYPES = new Set(['special', 'item', 'rack'])
+// 'miner'/'merge' incluídos aqui como rede de segurança pra eventos
+// futuros -- mas ícone de minerador (rollercoin/miners/*.gif) normalmente
+// já existe em public/miners-icons/, baixado por sync-miners-data.js
+// (pipeline separado, único source of truth pros +1600 mineradores). Ver
+// tryReuseMinerIcon() abaixo: NUNCA baixa de novo pra rc-icons/ se o
+// arquivo já existir lá -- evita duplicar o mesmo ícone em dois diretórios.
+const SYNCED_REFERENCE_TYPES = new Set(['special', 'item', 'rack', 'miner', 'merge'])
+
+// Se imagePath for um ícone de minerador (rollercoin/miners/{arquivo}) e
+// esse arquivo já existir em public/miners-icons/ (baixado por
+// sync-miners-data.js), reaproveita ele direto -- sem baixar de novo, sem
+// duplicar arquivo. Retorna o caminho local (pra registrar no manifest) ou
+// null se não for um caminho de minerador ou o arquivo ainda não existir
+// lá (caso de minerador novo ainda não sincronizado -- cai no download
+// normal pra rc-icons/ como último recurso).
+function tryReuseMinerIcon(imagePath) {
+  if (!imagePath.startsWith('rollercoin/miners/')) return null
+  const filename = basename(imagePath)
+  if (!existsSync(join(MINERS_ICONS_DIR, filename))) return null
+  return `/miners-icons/${filename}`
+}
 
 // Assets fixos de UI -- não são "recompensas" de nenhum evento específico, são
 // elementos visuais reaproveitados em qualquer merge/minerador (selo de nível,
@@ -138,12 +159,21 @@ async function main() {
 
   let downloadedCount = 0
   let alreadySyncedCount = 0
+  let reusedFromMinersIconsCount = 0
   let failedCount = 0
 
   for (const imagePath of imagePaths) {
     if (manifest[imagePath]) {
       console.log(`já sincronizado: ${imagePath}`)
       alreadySyncedCount++
+      continue
+    }
+
+    const reused = tryReuseMinerIcon(imagePath)
+    if (reused) {
+      manifest[imagePath] = reused
+      console.log(`reaproveitado de miners-icons/: ${imagePath} -> ${reused}`)
+      reusedFromMinersIconsCount++
       continue
     }
 
@@ -164,6 +194,7 @@ async function main() {
   console.log('--- resumo ---')
   console.log(`baixados agora: ${downloadedCount}`)
   console.log(`já existentes: ${alreadySyncedCount}`)
+  console.log(`reaproveitados de miners-icons/ (sem baixar de novo): ${reusedFromMinersIconsCount}`)
   if (failedCount > 0) console.log(`falharam: ${failedCount}`)
 }
 

@@ -9,6 +9,7 @@ import {
 } from '../utils/calculateEventProfitability'
 import Card from '../components/Card'
 import type { EventData } from '../types/event'
+import type { MinersData } from '../types/miner'
 
 const DISCOUNT_OPTIONS = [0, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60]
 const BOX_PRICE_OPTIONS = [1.99, 3.99, 11.99, 29.99]
@@ -64,16 +65,31 @@ function looksLikeEventData(value: unknown): value is EventData {
 
 function RewardImage({
   imagePath,
+  minerSlug,
+  minerImageBySlug,
   name,
   mergeLevel,
   sellable,
 }: {
   imagePath: string
+  // Recompensas reference_type "miner"/"merge" carregam o slug do
+  // minerador -- resolvemos a imagem pelo catálogo LOCAL já sincronizado
+  // via sync-miners-data.js (miners.json) em vez de chamar
+  // resolveAssetUrl(image_path) direto, que cairia no fallback externo
+  // (esses caminhos rollercoin/miners/*.gif nunca são sincronizados por
+  // sync-rc-icons.js). null quando a recompensa não é de minerador, ou
+  // quando o catálogo ainda não carregou/não achou o slug -- nesses casos
+  // cai no comportamento antigo abaixo.
+  minerSlug: string | null
+  minerImageBySlug: Map<string, string> | null
   name: string
   mergeLevel: number | null
   sellable: boolean | null
 }) {
   const [failed, setFailed] = useState(false)
+
+  const localMinerImage = minerSlug ? minerImageBySlug?.get(minerSlug) : undefined
+  const src = localMinerImage ?? getRewardImageUrl(imagePath)
 
   return (
     <div className="relative z-0 h-10 w-10 shrink-0">
@@ -83,7 +99,7 @@ function RewardImage({
         </div>
       ) : (
         <img
-          src={getRewardImageUrl(imagePath)}
+          src={src}
           alt={name}
           loading="lazy"
           onError={() => setFailed(true)}
@@ -110,6 +126,36 @@ function RewardImage({
 
 export default function Eventos() {
   const [event, setEvent] = useState<EventData | null>(null)
+
+  // Catálogo local de mineradores -- só usado pra resolver a imagem de
+  // recompensas reference_type "miner"/"merge" pelo slug (miners.json já
+  // tem essas imagens sincronizadas via sync-miners-data.js). Carregado em
+  // paralelo ao evento; se falhar, RewardImage cai no resolveAssetUrl do
+  // image_path cru de sempre.
+  const [minerImageBySlug, setMinerImageBySlug] = useState<Map<string, string> | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    fetch('/data/miners.json')
+      .then((res) => (res.ok ? (res.json() as Promise<MinersData>) : Promise.reject(res)))
+      .then((data) => {
+        if (cancelled) return
+        const map = new Map<string, string>()
+        for (const m of data.miners) {
+          if (m.image) map.set(m.slug, m.image)
+        }
+        setMinerImageBySlug(map)
+      })
+      .catch(() => {
+        // sem catálogo local -- RewardImage segue funcionando via
+        // resolveAssetUrl(image_path), só sem o atalho local
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -152,10 +198,16 @@ export default function Eventos() {
     )
   }
 
-  return <EventosContent event={event} />
+  return <EventosContent event={event} minerImageBySlug={minerImageBySlug} />
 }
 
-function EventosContent({ event }: { event: EventData }) {
+function EventosContent({
+  event,
+  minerImageBySlug,
+}: {
+  event: EventData
+  minerImageBySlug: Map<string, string> | null
+}) {
   const recommendation = calculateRecommendedMultiplier(event)
   const rewardSummary = calculateEventRewardSummary(event)
   const multiplierHours = event.multiplier_ttl_ms / 3_600_000
@@ -414,6 +466,8 @@ function EventosContent({ event }: { event: EventData }) {
                         <td className="py-2 pr-3">
                           <RewardImage
                             imagePath={reward.image_path}
+                            minerSlug={reward.miner_slug}
+                            minerImageBySlug={minerImageBySlug}
                             name={reward.name}
                             mergeLevel={mergeLevel}
                             sellable={reward.sellable}
