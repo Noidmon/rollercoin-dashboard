@@ -5,7 +5,12 @@ import SortDropdown, { type SortDropdownOption } from '../components/SortDropdow
 import { formatPower } from '../utils/formatPower'
 import { parseMinersInventory } from '../utils/parseMinersInventory'
 import { parsePartsInventory } from '../utils/parsePartsInventory'
-import { matchMinersInventory, type MatchedMinerEntry } from '../utils/matchMinersInventory'
+import {
+  matchMinersInventory,
+  matchRoomMinerInstances,
+  type MatchedMinerEntry,
+} from '../utils/matchMinersInventory'
+import { computeRoomMergeImpact, type RoomMergeImpact } from '../utils/roomMergeImpact'
 import type { MinerInventoryEntry } from '../utils/parseMinersInventory'
 import type { PartInventoryEntry } from '../utils/parsePartsInventory'
 import { clearLegacyInventoryKeys, readRealForgeLevel, writeRealForgeLevel } from '../utils/mergesStorage'
@@ -117,6 +122,35 @@ function AlreadyOwnedWarning({
       Este merge consome {requiredCopies}× {rarityLabel(fromLevel)} e produz 1 {rarityLabel(toLevel)}
       . Você já tem {ownedAtToLevel} {rarityLabel(toLevel)} -- ficará com {ownedAtToLevel + 1}.
     </div>
+  )
+}
+
+// "Impacto Real na Sala" -- delta de poder simulado (baseline vs sala com o
+// merge aplicado), reaproveitando o mesmo motor do Simulador
+// (calculateRoomPower/sumUniqueMinerBonusPercent) via computeRoomMergeImpact.
+// Fase 1: só o card principal (próximo merge); Cadeia Completa e Alcance
+// Real ficam pra uma próxima rodada.
+function RoomImpactLine({ impact }: { impact: RoomMergeImpact }) {
+  if (!impact.calculable) {
+    return (
+      <p className="mt-2 text-[11px] text-slate-500">
+        Impacto na sala: não calculável (peças fora da sala)
+      </p>
+    )
+  }
+
+  const sign = impact.deltaPower >= 0 ? '+' : ''
+  const colorClass = impact.deltaPower >= 0 ? 'text-emerald-400' : 'text-red-400'
+
+  return (
+    <p className="mt-2 text-xs">
+      <span className="text-slate-400">Impacto real: </span>
+      <span className={colorClass}>
+        {sign}
+        {formatPower(impact.deltaPower)} ({sign}
+        {impact.deltaPercent.toFixed(3)}% em relação ao poder permanente atual)
+      </span>
+    </p>
   )
 }
 
@@ -558,6 +592,47 @@ export default function Merges() {
     return map
   }, [mergeNeeds, minersById, ownedByNameLevelMap, partsOwnedMap, forgeDiscount, partPrices, craftingPrices])
 
+  // Cada instância FÍSICA da sala casada individualmente (não agregada em
+  // quantidade) contra miners.json -- "Impacto Real na Sala" precisa saber
+  // exatamente quais cópias remover (e o rack de cada uma) pra simular um
+  // merge, o que a contagem agregada de ownedByNameLevelMap não dá.
+  const resolvedRoomInstances = useMemo(() => {
+    if (!minersData || !playerData?.roomConfig) return []
+    return matchRoomMinerInstances(playerData.roomConfig.miners, minersData.miners)
+  }, [playerData, minersData])
+
+  // Impacto real (delta de poder simulado) do PRÓXIMO merge de cada
+  // minerador -- Fase 1 do "Impacto Real na Sala": só o card principal por
+  // enquanto (Cadeia Completa e Alcance Real ficam pra uma próxima rodada).
+  // Reaproveita o mesmo motor do Simulador via computeRoomMergeImpact.
+  const roomMergeImpacts = useMemo(() => {
+    const map = new Map<string, RoomMergeImpact>()
+    if (!minersData || !playerData?.roomConfig) return map
+    const roomMiners = playerData.roomConfig.miners
+    const roomRacks = playerData.roomConfig.racks
+    for (const need of mergeNeeds) {
+      const miner = minersById.get(need.minerId)
+      const nextMerge = miner?.merges.find((mg) => mg.level === need.nextLevel)
+      if (!nextMerge) continue
+      map.set(
+        need.minerId,
+        computeRoomMergeImpact(
+          need.minerId,
+          need.currentLevel,
+          need.requiredCopies,
+          nextMerge,
+          roomMiners,
+          resolvedRoomInstances,
+          roomRacks,
+          playerData.games,
+          playerData.bonus_percent,
+          playerData.max_power,
+        ),
+      )
+    }
+    return map
+  }, [mergeNeeds, minersById, resolvedRoomInstances, playerData, minersData])
+
   const filteredMergeNeeds = useMemo(() => {
     const filtered = mergeNeeds.filter((need) => {
       if (need.status !== statusFilter) return false
@@ -811,6 +886,10 @@ export default function Merges() {
                           fromBonus={need.currentBonus}
                           toBonus={need.nextBonus}
                         />
+
+                        {roomMergeImpacts.has(need.minerId) && (
+                          <RoomImpactLine impact={roomMergeImpacts.get(need.minerId)!} />
+                        )}
 
                         <div className="mt-3 text-sm">
                           <div className="flex items-center justify-between">

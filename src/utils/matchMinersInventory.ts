@@ -1,5 +1,6 @@
 import type { Miner } from '../types/miner'
 import type { MinerInventoryEntry } from './parseMinersInventory'
+import type { Miner as RoomMinerInstance } from './calculatePower'
 
 export interface MatchedMinerEntry {
   name: string
@@ -46,6 +47,30 @@ function normalizeMinerName(name: string): string {
     .toLowerCase()
 }
 
+export function buildMinersByNormalizedNameMap(miners: Miner[]): Map<string, Miner> {
+  const map = new Map<string, Miner>()
+  for (const m of miners) map.set(normalizeMinerName(m.name), m)
+  return map
+}
+
+// Núcleo do casamento nome+power reaproveitado tanto por matchMinersInventory
+// (agrega em quantidade) quanto por matchRoomMinerInstances (preserva cada
+// instância física da sala) -- mesma tolerância de 0.5%, mesma normalização
+// de nome, sem duplicar a lógica entre os dois.
+export function resolveMinerLevel(
+  name: string,
+  powerValue: number,
+  minersByNormalizedName: Map<string, Miner>,
+): { miner: Miner; matchedLevel: number } | null {
+  const miner = minersByNormalizedName.get(normalizeMinerName(name))
+  if (!miner) return null
+
+  if (powersMatch(powerValue, miner.power)) return { miner, matchedLevel: 0 }
+
+  const mergeMatch = miner.merges.find((mg) => powersMatch(powerValue, mg.power))
+  return mergeMatch ? { miner, matchedLevel: mergeMatch.level } : null
+}
+
 // Casa cada entrada do inventário colado com o minerador + nível de merge
 // correspondente em miners.json, comparando o power (não dá pra usar só o
 // nome -- o mesmo minerador aparece várias vezes no inventário, uma por
@@ -56,38 +81,58 @@ export function matchMinersInventory(
 ): MatchInventoryResult {
   const matched: MatchedMinerEntry[] = []
   const unrecognized: MinerInventoryEntry[] = []
-
-  const minersByNormalizedName = new Map<string, Miner>()
-  for (const m of miners) {
-    minersByNormalizedName.set(normalizeMinerName(m.name), m)
-  }
+  const minersByNormalizedName = buildMinersByNormalizedNameMap(miners)
 
   for (const entry of entries) {
-    const miner = minersByNormalizedName.get(normalizeMinerName(entry.name))
-    if (!miner) {
+    const resolved = resolveMinerLevel(entry.name, entry.powerValue, minersByNormalizedName)
+    if (!resolved) {
       unrecognized.push(entry)
       continue
     }
 
-    let matchedLevel: number | null = null
-    if (powersMatch(entry.powerValue, miner.power)) {
-      matchedLevel = 0
-    } else {
-      const mergeMatch = miner.merges.find((mg) => powersMatch(entry.powerValue, mg.power))
-      if (mergeMatch) matchedLevel = mergeMatch.level
-    }
-
-    if (matchedLevel === null) {
-      unrecognized.push(entry)
-    } else {
-      matched.push({
-        name: entry.name,
-        quantity: entry.quantity,
-        sellable: entry.sellable,
-        matchedLevel,
-      })
-    }
+    matched.push({
+      name: entry.name,
+      quantity: entry.quantity,
+      sellable: entry.sellable,
+      matchedLevel: resolved.matchedLevel,
+    })
   }
 
   return { matched, unrecognized }
+}
+
+export interface ResolvedRoomMinerInstance {
+  // Objeto ORIGINAL da sala (mesma referência, com _id/miner_id/placement
+  // intactos) -- preservado de propósito, sem agregar em quantidade, porque
+  // o "Impacto Real na Sala" de /merges precisa saber EXATAMENTE quais
+  // cópias físicas remover (e em qual rack) pra simular um merge.
+  instance: RoomMinerInstance
+  minerId: string // id do minerador em miners.json -- NÃO o miner_id da sala
+  minerName: string
+  matchedLevel: number
+}
+
+// Casa cada INSTÂNCIA individual de room-config (sem agregar) contra
+// miners.json -- reaproveita resolveMinerLevel em vez de duplicar a lógica
+// de tolerância/normalização já usada em matchMinersInventory.
+export function matchRoomMinerInstances(
+  roomMiners: RoomMinerInstance[],
+  miners: Miner[],
+): ResolvedRoomMinerInstance[] {
+  const minersByNormalizedName = buildMinersByNormalizedNameMap(miners)
+  const resolved: ResolvedRoomMinerInstance[] = []
+
+  for (const instance of roomMiners) {
+    if (!instance.name) continue
+    const match = resolveMinerLevel(instance.name, instance.power, minersByNormalizedName)
+    if (!match) continue
+    resolved.push({
+      instance,
+      minerId: match.miner.id,
+      minerName: match.miner.name,
+      matchedLevel: match.matchedLevel,
+    })
+  }
+
+  return resolved
 }
