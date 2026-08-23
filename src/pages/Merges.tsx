@@ -31,8 +31,10 @@ import {
   getMinerPowerAtLevel,
   getRatioColor,
   partImagePath,
+  partPriceKey,
   type CraftingPrices,
 } from '../utils/minerMergeCalculator'
+import { getDeepestConsumedRarity } from '../utils/partCrafting'
 import { resolveAssetUrl } from '../utils/resolveAssetUrl'
 import type { Miner, MinersData } from '../types/miner'
 
@@ -53,6 +55,39 @@ function DestinationRarity({ level }: { level: number }) {
     <span className="font-bold" style={{ color: getMergeLevelColor(level) }}>
       {getMinerLevelRarityName(level)}
     </span>
+  )
+}
+
+// Linha alternativa "ou craftando do seu estoque" abaixo de cada peça
+// faltante -- reaproveita simulatePartCrafting (já calculado em
+// PartNeed.craftAlternative por computeMergeNeeds.ts, sem duplicar aqui).
+// null quando não falta nada ou quando não há nenhum estoque de raridade
+// menor que ajude (nesse caso não faz sentido oferecer a opção).
+function CraftAlternativeLine({ part }: { part: PartNeed }) {
+  if (!part.craftAlternative) return null
+  const deepest = getDeepestConsumedRarity(part.craftAlternative.consumedByRarity)
+  if (!deepest) return null
+
+  const usedLabel = partPriceKey(deepest.rarity, part.type)
+
+  if (part.craftAlternative.fullyCraftable) {
+    return (
+      <p className="mt-0.5 text-[11px] text-slate-500">
+        Ou craftando do seu estoque: {formatRLT(part.craftAlternative.totalRLTCost)} RLT (usa{' '}
+        {deepest.quantity} {usedLabel})
+      </p>
+    )
+  }
+
+  const deficitLabel = part.craftAlternative.finalDeficitRarity
+    ? partPriceKey(part.craftAlternative.finalDeficitRarity, part.type)
+    : ''
+  return (
+    <p className="mt-0.5 text-[11px] text-amber-500">
+      Ou craftando parcialmente: {formatRLT(part.craftAlternative.totalRLTCost)} RLT (usa{' '}
+      {deepest.quantity} {usedLabel}) -- ainda faltariam {part.craftAlternative.finalDeficit}{' '}
+      {deficitLabel}
+    </p>
   )
 }
 
@@ -116,20 +151,23 @@ function ChainStepRow({ step }: { step: ChainSimulation['steps'][number] }) {
       </div>
 
       {step.partsNeeded.map((p: PartNeed) => (
-        <div key={`${p.rarity}-${p.type}`} className="mt-1 flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            <img
-              src={resolveAssetUrl(partImagePath(p.type, p.rarity))}
-              alt={`${p.rarity} ${p.type}`}
-              className="h-4 w-4 object-contain"
-            />
-            <span className="text-slate-300">
-              {p.owned}/{p.needed}
+        <div key={`${p.rarity}-${p.type}`} className="mt-1">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <img
+                src={resolveAssetUrl(partImagePath(p.type, p.rarity))}
+                alt={`${p.rarity} ${p.type}`}
+                className="h-4 w-4 object-contain"
+              />
+              <span className="text-slate-300">
+                {p.owned}/{p.needed}
+              </span>
+            </div>
+            <span className={p.missing > 0 ? 'text-red-400' : 'text-emerald-400'}>
+              {p.missing > 0 ? `faltam ${p.missing} (${formatRLT(p.missingCost)} RLT)` : 'completo'}
             </span>
           </div>
-          <span className={p.missing > 0 ? 'text-red-400' : 'text-emerald-400'}>
-            {p.missing > 0 ? `faltam ${p.missing} (${formatRLT(p.missingCost)} RLT)` : 'completo'}
-          </span>
+          <CraftAlternativeLine part={p} />
         </div>
       ))}
 
@@ -543,25 +581,27 @@ export default function Merges() {
                         {need.partsNeeded.length > 0 && (
                           <div className="mt-3 space-y-1.5 border-t border-slate-800 pt-3">
                             {need.partsNeeded.map((p) => (
-                              <div
-                                key={`${p.rarity}-${p.type}`}
-                                className="flex items-center justify-between text-sm"
-                              >
-                                <div className="flex items-center gap-2">
-                                  <img
-                                    src={resolveAssetUrl(partImagePath(p.type, p.rarity))}
-                                    alt={`${p.rarity} ${p.type}`}
-                                    className="h-5 w-5 object-contain"
-                                  />
-                                  <span className="text-slate-300">
-                                    {p.owned}/{p.needed}
+                              <div key={`${p.rarity}-${p.type}`}>
+                                <div className="flex items-center justify-between text-sm">
+                                  <div className="flex items-center gap-2">
+                                    <img
+                                      src={resolveAssetUrl(partImagePath(p.type, p.rarity))}
+                                      alt={`${p.rarity} ${p.type}`}
+                                      className="h-5 w-5 object-contain"
+                                    />
+                                    <span className="text-slate-300">
+                                      {p.owned}/{p.needed}
+                                    </span>
+                                  </div>
+                                  <span
+                                    className={p.missing > 0 ? 'text-red-400' : 'text-emerald-400'}
+                                  >
+                                    {p.missing > 0
+                                      ? `faltam ${p.missing} (${formatRLT(p.missingCost)} RLT)`
+                                      : 'completo'}
                                   </span>
                                 </div>
-                                <span className={p.missing > 0 ? 'text-red-400' : 'text-emerald-400'}>
-                                  {p.missing > 0
-                                    ? `faltam ${p.missing} (${formatRLT(p.missingCost)} RLT)`
-                                    : 'completo'}
-                                </span>
+                                <CraftAlternativeLine part={p} />
                               </div>
                             ))}
                             <div className="flex items-center justify-between border-t border-slate-800 pt-1.5 text-sm font-semibold">

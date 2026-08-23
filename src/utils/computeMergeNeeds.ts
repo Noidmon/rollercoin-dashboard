@@ -9,6 +9,7 @@ import {
   type PartType,
   type Rarity,
 } from './minerMergeCalculator'
+import { simulatePartCrafting, type PartCraftingResult } from './partCrafting'
 
 export interface PartNeed {
   type: PartType
@@ -17,6 +18,10 @@ export interface PartNeed {
   owned: number
   missing: number
   missingCost: number
+  // Alternativa de craftar a peça faltante a partir de estoque de raridade
+  // menor -- null quando não falta nada OU quando não há nenhum estoque de
+  // raridade menor que ajude em nada (não faz sentido oferecer a opção).
+  craftAlternative: PartCraftingResult | null
 }
 
 export interface MergeNeed {
@@ -56,7 +61,14 @@ function computePartsNeeded(
     const missing = Math.max(0, p.count - owned)
     const price = getPartPrice(p.rarity, p.type, partPrices, craftingPrices)
     const missingCost = missing * price * (1 - forgeDiscount)
-    return { type: p.type, rarity: p.rarity, needed: p.count, owned, missing, missingCost }
+
+    let craftAlternative: PartCraftingResult | null = null
+    if (missing > 0) {
+      const simulation = simulatePartCrafting(partsOwned, p.rarity, p.type, p.count, forgeDiscount)
+      if (Object.keys(simulation.consumedByRarity).length > 0) craftAlternative = simulation
+    }
+
+    return { type: p.type, rarity: p.rarity, needed: p.count, owned, missing, missingCost, craftAlternative }
   })
 }
 
