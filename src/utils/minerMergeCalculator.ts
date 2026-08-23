@@ -144,6 +144,16 @@ export function getMergeLevelColor(level: number): string {
   return LEVEL_COLORS[level] ?? FALLBACK_LEVEL_COLOR
 }
 
+// Limiares fixos (mesmos do aviso "Poder <1.5 por Ph" em /mineradores/:slug)
+// -- independente da cor de nível/raridade da linha. Exportado daqui (em vez
+// de duplicado) pra ser reaproveitado também no badge de qualidade de
+// /merges.
+export function getRatioColor(ratio: number): string {
+  if (ratio > 3.0) return '#DC2626'
+  if (ratio >= 1.5) return '#D97706'
+  return '#16A34A'
+}
+
 // Exportado -- reaproveitado em /merges pra calcular o custo só das peças
 // que faltam no inventário, sem duplicar a lógica de override/fallback.
 export function getPartPrice(
@@ -185,13 +195,24 @@ export interface MergeCostRow {
   ratioPower: number
 }
 
+// `fromLevel` (opcional) faz a tabela começar a partir de um nível já
+// possuído -- usado em /merges pra "Cadeia Completa": as cópias do nível
+// `fromLevel` já foram conquistadas (custo 0), e cada passo seguinte
+// continua reaproveitando a MESMA fórmula recursiva de finalCost (as cópias
+// intermediárias vêm de merges anteriores dentro dessa mesma cadeia, nunca
+// de compra avulsa). Omitido (ou 0), o comportamento é idêntico ao de
+// /mineradores/:slug -- tabela completa a partir da base.
 export function calculateMergeCostTable(
   miner: Pick<Miner, 'merges'>,
   forgeDiscount: number,
   overridePrices: Record<string, number>,
   craftingPrices: CraftingPrices,
+  options?: { fromLevel?: number },
 ): MergeCostRow[] {
-  const sortedMerges = [...miner.merges].sort((a, b) => a.level - b.level)
+  const fromLevel = options?.fromLevel ?? 0
+  const sortedMerges = [...miner.merges]
+    .filter((mg) => mg.level > fromLevel)
+    .sort((a, b) => a.level - b.level)
   const rows: MergeCostRow[] = []
   let previousFinalCost = 0
 

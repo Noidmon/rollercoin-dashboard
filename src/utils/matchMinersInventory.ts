@@ -25,6 +25,27 @@ function powersMatch(a: number, b: number): boolean {
   return Math.abs(a - b) / b <= POWER_TOLERANCE
 }
 
+// Confirmado byte a byte comparando miners.json com o texto colado real:
+// nomes com "’" (U+2019, aspa curva) ou "–" (U+2013, travessão) em
+// miners.json aparecem como "â" (U+00E2) no texto colado -- mojibake
+// clássico (o byte UTF-8 0xE2, primeiro byte de qualquer caractere de
+// pontuação especial U+20xx, sobrevive sozinho e vira "â" quando
+// reinterpretado como Latin-1/Windows-1252, e os bytes seguintes se
+// perdem). Confirmado que nenhum dos 1673 mineradores usa "â" de verdade
+// no nome, e miners.json é inconsistente (mistura aspa reta ' e curva ’
+// em nomes diferentes) -- então normaliza removendo os três (aspa reta,
+// aspa curva, travessão) e o artefato "â" dos dois lados antes de
+// comparar. NÃO remove hífen comum '-' -- isso causaria uma colisão real
+// (“Banana” e “Ba-na-na” virariam o mesmo nome), e nenhum caso real
+// precisa disso (travessão U+2013 é um código diferente de hífen U+002D).
+function normalizeMinerName(name: string): string {
+  return name
+    .replace(/[‘’–—â']/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+}
+
 // Casa cada entrada do inventário colado com o minerador + nível de merge
 // correspondente em miners.json, comparando o power (não dá pra usar só o
 // nome -- o mesmo minerador aparece várias vezes no inventário, uma por
@@ -36,8 +57,13 @@ export function matchMinersInventory(
   const matched: MatchedMinerEntry[] = []
   const unrecognized: MinerInventoryEntry[] = []
 
+  const minersByNormalizedName = new Map<string, Miner>()
+  for (const m of miners) {
+    minersByNormalizedName.set(normalizeMinerName(m.name), m)
+  }
+
   for (const entry of entries) {
-    const miner = miners.find((m) => m.name === entry.name)
+    const miner = minersByNormalizedName.get(normalizeMinerName(entry.name))
     if (!miner) {
       unrecognized.push(entry)
       continue

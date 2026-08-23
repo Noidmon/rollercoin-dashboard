@@ -2,6 +2,7 @@ import type { Miner } from '../types/miner'
 import type { MatchedMinerEntry } from './matchMinersInventory'
 import type { PartInventoryEntry } from './parsePartsInventory'
 import {
+  calculateMergeCostTable,
   getActiveParts,
   getPartPrice,
   type CraftingPrices,
@@ -31,6 +32,14 @@ export interface MergeNeed {
   mergeFeeCost: number
   totalMissingPartsCost: number
   ready: boolean
+  // 'ready' = cópias e peças completas; 'parts-missing' = cópias completas,
+  // peças faltando; 'copies-missing' = cópias insuficientes (com ou sem
+  // peças) -- usado pelas abas de filtro em /merges.
+  status: 'ready' | 'parts-missing' | 'copies-missing'
+  // Ratio Poder (custo/Ph) do PRÓXIMO merge -- mesma fórmula recursiva de
+  // calculateMergeCostTable usada em /mineradores/:slug, reaproveitada aqui
+  // pro badge de qualidade (sem duplicar a conta de finalCost/ratioPower).
+  nextRatioPower: number
 }
 
 // Pra cada minerador mergeable que o jogador possui (em qualquer nível,
@@ -94,7 +103,13 @@ export function computeMergeNeeds(
 
     const totalMissingPartsCost = partsNeeded.reduce((sum, p) => sum + p.missingCost, 0)
     const mergeFeeCost = nextMerge.mergeFee * (1 - forgeDiscount)
-    const ready = missingCopies === 0 && partsNeeded.every((p) => p.missing === 0)
+    const partsComplete = partsNeeded.every((p) => p.missing === 0)
+    const ready = missingCopies === 0 && partsComplete
+    const status: MergeNeed['status'] =
+      missingCopies > 0 ? 'copies-missing' : ready ? 'ready' : 'parts-missing'
+
+    const costTable = calculateMergeCostTable(miner, forgeDiscount, partPrices, craftingPrices)
+    const nextRatioPower = costTable.find((row) => row.merge.level === nextMerge.level)?.ratioPower ?? 0
 
     needs.push({
       minerId: miner.id,
@@ -109,6 +124,8 @@ export function computeMergeNeeds(
       mergeFeeCost,
       totalMissingPartsCost,
       ready,
+      status,
+      nextRatioPower,
     })
   }
 

@@ -16,9 +16,15 @@ import {
 } from '../utils/mergesStorage'
 import { readStoredPartPrices } from '../utils/partPriceStorage'
 import { computeMergeNeeds, type MergeNeed } from '../utils/computeMergeNeeds'
-import { FORGE_LEVELS, partImagePath, type CraftingPrices } from '../utils/minerMergeCalculator'
+import {
+  FORGE_LEVELS,
+  calculateMergeCostTable,
+  getRatioColor,
+  partImagePath,
+  type CraftingPrices,
+} from '../utils/minerMergeCalculator'
 import { resolveAssetUrl } from '../utils/resolveAssetUrl'
-import type { MinersData } from '../types/miner'
+import type { Miner, MinersData } from '../types/miner'
 
 function formatRLT(value: number): string {
   return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -26,6 +32,57 @@ function formatRLT(value: number): string {
 
 function levelLabel(level: number): string {
   return level === 0 ? 'Base' : `Nível ${level}`
+}
+
+type StatusFilter = 'ready' | 'parts-missing' | 'copies-missing'
+
+const STATUS_TABS: { key: StatusFilter; label: string }[] = [
+  { key: 'ready', label: 'Prontos pra merge' },
+  { key: 'parts-missing', label: 'Falta só peças' },
+  { key: 'copies-missing', label: 'Mineradores não prontas' },
+]
+
+// Sub-componente da "Cadeia Completa" -- reaproveita calculateMergeCostTable
+// (mesma fórmula recursiva de finalCost de /mineradores/:slug) a partir do
+// nível já possuído, assumindo que as cópias intermediárias vêm de merges
+// anteriores dentro dessa mesma cadeia (não de compra avulsa).
+function FullChain({
+  miner,
+  currentLevel,
+  forgeDiscount,
+  partPrices,
+  craftingPrices,
+}: {
+  miner: Miner
+  currentLevel: number
+  forgeDiscount: number
+  partPrices: Record<string, number>
+  craftingPrices: CraftingPrices
+}) {
+  const chain = calculateMergeCostTable(miner, forgeDiscount, partPrices, craftingPrices, {
+    fromLevel: currentLevel,
+  })
+
+  if (chain.length === 0) return null
+
+  const last = chain[chain.length - 1]
+  const totalCost = last.finalCost
+
+  return (
+    <div className="mt-3 space-y-1.5 border-t border-slate-800 pt-3 text-sm">
+      <p className="text-xs text-slate-400">
+        Nível {currentLevel === 0 ? 'Base' : currentLevel} -&gt; Nível {last.merge.level} (máximo)
+      </p>
+      <div className="flex items-center justify-between">
+        <span className="text-slate-400">Poder final</span>
+        <span className="text-white">{formatPower(last.merge.power)}</span>
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-slate-400">Custo total acumulado</span>
+        <span className="text-white">{formatRLT(totalCost)} RLT</span>
+      </div>
+    </div>
+  )
 }
 
 export default function Merges() {
@@ -47,6 +104,17 @@ export default function Merges() {
   const [unrecognized, setUnrecognized] = useState<MinerInventoryEntry[]>([])
   const [realForgeLevel, setRealForgeLevel] = useState<number>(() => readRealForgeLevel())
   const [partPrices] = useState<Record<string, number>>(() => readStoredPartPrices())
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ready')
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set())
+
+  function toggleExpanded(minerId: string) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(minerId)) next.delete(minerId)
+      else next.add(minerId)
+      return next
+    })
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -116,6 +184,27 @@ export default function Merges() {
       craftingPrices,
     )
   }, [minersInventory, minersData, partsInventory, forgeDiscount, partPrices, craftingPrices])
+
+  const statusCounts = useMemo(() => {
+    const counts: Record<StatusFilter, number> = {
+      ready: 0,
+      'parts-missing': 0,
+      'copies-missing': 0,
+    }
+    for (const need of mergeNeeds) counts[need.status]++
+    return counts
+  }, [mergeNeeds])
+
+  const filteredMergeNeeds = useMemo(
+    () => mergeNeeds.filter((need) => need.status === statusFilter),
+    [mergeNeeds, statusFilter],
+  )
+
+  const minersById = useMemo(() => {
+    const map = new Map<string, Miner>()
+    if (minersData) for (const m of minersData.miners) map.set(m.id, m)
+    return map
+  }, [minersData])
 
   if (loadError) {
     return (
@@ -198,88 +287,151 @@ export default function Merges() {
               </p>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {mergeNeeds.map((need) => (
-                <div
-                  key={need.minerId}
-                  className={`rounded-lg border bg-slate-900 p-4 ${
-                    need.ready ? 'border-emerald-500 ring-1 ring-emerald-500/40' : 'border-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    {need.minerImage ? (
-                      <img
-                        src={need.minerImage}
-                        alt={need.minerName}
-                        className="h-12 w-12 shrink-0 object-contain"
-                      />
-                    ) : (
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center text-slate-600">
-                        ?
-                      </div>
-                    )}
-                    <div>
-                      <p className="font-semibold text-white">{need.minerName}</p>
-                      <p className="text-xs text-slate-400">
-                        {levelLabel(need.currentLevel)} -&gt; Nível {need.nextLevel}
-                      </p>
-                    </div>
-                    {need.ready && (
-                      <span className="ml-auto rounded-full bg-emerald-500/20 px-2 py-1 text-[10px] font-bold uppercase text-emerald-300">
-                        Pronto
-                      </span>
-                    )}
-                  </div>
+            <>
+              <div className="flex flex-wrap gap-2">
+                {STATUS_TABS.map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setStatusFilter(tab.key)}
+                    className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                      statusFilter === tab.key
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    {tab.label} ({statusCounts[tab.key]})
+                  </button>
+                ))}
+              </div>
 
-                  <div className="mt-3 text-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-400">Cópias</span>
-                      <span className={need.missingCopies > 0 ? 'text-red-400' : 'text-emerald-400'}>
-                        {need.ownedAtCurrentLevel} / {need.requiredCopies}
-                        {need.missingCopies > 0 && ` (faltam ${need.missingCopies})`}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-400">Taxa de merge</span>
-                      <span className="text-slate-200">{formatRLT(need.mergeFeeCost)} RLT</span>
-                    </div>
-                  </div>
-
-                  {need.partsNeeded.length > 0 && (
-                    <div className="mt-3 space-y-1.5 border-t border-slate-800 pt-3">
-                      {need.partsNeeded.map((p) => (
-                        <div
-                          key={`${p.rarity}-${p.type}`}
-                          className="flex items-center justify-between text-sm"
-                        >
-                          <div className="flex items-center gap-2">
+              {filteredMergeNeeds.length === 0 ? (
+                <Card title="Próximos Merges">
+                  <p className="text-sm text-slate-400">Nenhum minerador nessa categoria.</p>
+                </Card>
+              ) : (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {filteredMergeNeeds.map((need) => {
+                    const isExpanded = expandedIds.has(need.minerId)
+                    const miner = minersById.get(need.minerId)
+                    return (
+                      <div
+                        key={need.minerId}
+                        className={`rounded-lg border bg-slate-900 p-4 ${
+                          need.ready
+                            ? 'border-emerald-500 ring-1 ring-emerald-500/40'
+                            : 'border-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          {need.minerImage ? (
                             <img
-                              src={resolveAssetUrl(partImagePath(p.type, p.rarity))}
-                              alt={`${p.rarity} ${p.type}`}
-                              className="h-5 w-5 object-contain"
+                              src={need.minerImage}
+                              alt={need.minerName}
+                              className="h-12 w-12 shrink-0 object-contain"
                             />
-                            <span className="text-slate-300">
-                              {p.owned}/{p.needed}
+                          ) : (
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center text-slate-600">
+                              ?
+                            </div>
+                          )}
+                          <div>
+                            <p className="font-semibold text-white">{need.minerName}</p>
+                            <p className="text-xs text-slate-400">
+                              {levelLabel(need.currentLevel)} -&gt; Nível {need.nextLevel}
+                            </p>
+                          </div>
+                          <div className="ml-auto flex flex-col items-end gap-1">
+                            {need.ready && (
+                              <span className="rounded-full bg-emerald-500/20 px-2 py-1 text-[10px] font-bold uppercase text-emerald-300">
+                                Pronto
+                              </span>
+                            )}
+                            <span
+                              className="rounded-full px-2 py-1 text-[10px] font-bold text-white"
+                              style={{ backgroundColor: getRatioColor(need.nextRatioPower) }}
+                              title="Qualidade do próximo merge (custo por Ph/s)"
+                            >
+                              {need.nextRatioPower.toFixed(2)} RLT/Ph
                             </span>
                           </div>
-                          <span className={p.missing > 0 ? 'text-red-400' : 'text-emerald-400'}>
-                            {p.missing > 0
-                              ? `faltam ${p.missing} (${formatRLT(p.missingCost)} RLT)`
-                              : 'completo'}
-                          </span>
                         </div>
-                      ))}
-                      <div className="flex items-center justify-between border-t border-slate-800 pt-1.5 text-sm font-semibold">
-                        <span className="text-slate-300">Custo peças faltando</span>
-                        <span className="text-white">
-                          {formatRLT(need.totalMissingPartsCost)} RLT
-                        </span>
+
+                        <div className="mt-3 text-sm">
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400">Cópias</span>
+                            <span
+                              className={need.missingCopies > 0 ? 'text-red-400' : 'text-emerald-400'}
+                            >
+                              {need.ownedAtCurrentLevel} / {need.requiredCopies}
+                              {need.missingCopies > 0 && ` (faltam ${need.missingCopies})`}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400">Taxa de merge</span>
+                            <span className="text-slate-200">{formatRLT(need.mergeFeeCost)} RLT</span>
+                          </div>
+                        </div>
+
+                        {need.partsNeeded.length > 0 && (
+                          <div className="mt-3 space-y-1.5 border-t border-slate-800 pt-3">
+                            {need.partsNeeded.map((p) => (
+                              <div
+                                key={`${p.rarity}-${p.type}`}
+                                className="flex items-center justify-between text-sm"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <img
+                                    src={resolveAssetUrl(partImagePath(p.type, p.rarity))}
+                                    alt={`${p.rarity} ${p.type}`}
+                                    className="h-5 w-5 object-contain"
+                                  />
+                                  <span className="text-slate-300">
+                                    {p.owned}/{p.needed}
+                                  </span>
+                                </div>
+                                <span className={p.missing > 0 ? 'text-red-400' : 'text-emerald-400'}>
+                                  {p.missing > 0
+                                    ? `faltam ${p.missing} (${formatRLT(p.missingCost)} RLT)`
+                                    : 'completo'}
+                                </span>
+                              </div>
+                            ))}
+                            <div className="flex items-center justify-between border-t border-slate-800 pt-1.5 text-sm font-semibold">
+                              <span className="text-slate-300">Custo peças faltando</span>
+                              <span className="text-white">
+                                {formatRLT(need.totalMissingPartsCost)} RLT
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        {miner && (
+                          <div className="mt-3 border-t border-slate-800 pt-3">
+                            <button
+                              type="button"
+                              onClick={() => toggleExpanded(need.minerId)}
+                              className="text-xs font-medium text-indigo-400 hover:text-indigo-300"
+                            >
+                              {isExpanded ? '- Ocultar cadeia completa' : '+ Ver cadeia completa'}
+                            </button>
+                            {isExpanded && (
+                              <FullChain
+                                miner={miner}
+                                currentLevel={need.currentLevel}
+                                forgeDiscount={forgeDiscount}
+                                partPrices={partPrices}
+                                craftingPrices={craftingPrices}
+                              />
+                            )}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  )}
+                    )
+                  })}
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
 
           {unrecognized.length > 0 && (

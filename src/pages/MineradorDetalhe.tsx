@@ -11,6 +11,7 @@ import {
   calculateMergeCostTable,
   getMergeLevelColor,
   getMergeLevelRarity,
+  getRatioColor,
   partImagePath,
   type ActivePart,
   type CraftingPrices,
@@ -30,14 +31,6 @@ function formatRLT(value: number): string {
 // 2 dígitos = hex de 8 dígitos, suportado em todos os browsers evergreen).
 function levelColorWithAlpha(level: number, alphaHex: string): string {
   return `${getMergeLevelColor(level)}${alphaHex}`
-}
-
-// Limiares fixos (mesmos do aviso "Poder <1.5 por Ph" no topo da página) --
-// independente da cor de nível/raridade da linha.
-function getRatioColor(ratio: number): string {
-  if (ratio > 3.0) return '#DC2626'
-  if (ratio >= 1.5) return '#D97706'
-  return '#16A34A'
 }
 
 function LevelBadge({ level }: { level: number }) {
