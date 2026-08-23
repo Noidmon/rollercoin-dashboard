@@ -13,6 +13,16 @@ export interface RoomMergeImpact {
 
 const NOT_CALCULABLE: RoomMergeImpact = { calculable: false, deltaPower: 0, deltaPercent: 0 }
 
+// Cor do badge de qualidade baseado no Impacto Real -- binário (diferente
+// das 3 faixas de getRatioColor): verde quando o impacto é positivo
+// confirmado, vermelho quando é zero ou negativo, cinza neutro quando não
+// dá pra calcular (peças fora da sala) -- nunca força vermelho nem verde
+// pra um caso que não temos como avaliar.
+export function getRoomImpactColor(impact: RoomMergeImpact | undefined): string {
+  if (!impact || !impact.calculable) return '#475569'
+  return impact.deltaPower > 0 ? '#16A34A' : '#DC2626'
+}
+
 // Impacto real de UM merge específico na sala -- reaproveita o mesmo motor
 // (calculateRoomPower + sumUniqueMinerBonusPercent) e o mesmo padrão
 // baseline/simulado/delta já confirmados e usados pelo Simulador (o total

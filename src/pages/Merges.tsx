@@ -9,8 +9,14 @@ import {
   matchMinersInventory,
   matchRoomMinerInstances,
   type MatchedMinerEntry,
+  type ResolvedRoomMinerInstance,
 } from '../utils/matchMinersInventory'
-import { computeRoomMergeImpact, type RoomMergeImpact } from '../utils/roomMergeImpact'
+import {
+  computeRoomMergeImpact,
+  getRoomImpactColor,
+  type RoomMergeImpact,
+} from '../utils/roomMergeImpact'
+import type { Miner as RoomMiner, Rack } from '../utils/calculatePower'
 import type { MinerInventoryEntry } from '../utils/parseMinersInventory'
 import type { PartInventoryEntry } from '../utils/parsePartsInventory'
 import { clearLegacyInventoryKeys, readRealForgeLevel, writeRealForgeLevel } from '../utils/mergesStorage'
@@ -195,20 +201,23 @@ const STATUS_TABS: { key: StatusFilter; label: string }[] = [
   { key: 'copies-missing', label: 'Mineradores não prontas' },
 ]
 
-// Mesmas faixas de getRatioColor (verde < 1.5, laranja 1.5-3.0, vermelho >
-// 3.0) reaproveitadas pro filtro de qualidade -- "Válidos" = verde ou
-// laranja (exclui só o vermelho), "Ótimos" = só verde.
-type QualityFilter = 'all' | 'valid' | 'great'
+// Badge de qualidade agora é baseado no Impacto Real (não mais no Ratio
+// Poder isolado) -- e o Impacto Real é BINÁRIO (calculável com ganho ou
+// não), diferente das 3 faixas do Ratio Poder (verde/laranja/vermelho).
+// Por isso o filtro de qualidade também virou binário: "Válidos" = só
+// impacto real positivo confirmado (verde). "Ótimos" foi removido de
+// propósito -- com só 2 estados possíveis (verde/vermelho, fora o cinza de
+// "não calculável"), um terceiro filtro "Ótimos" idêntico a "Válidos"
+// seria redundante.
+type QualityFilter = 'all' | 'valid'
 
 const QUALITY_TABS: { key: QualityFilter; label: string }[] = [
   { key: 'all', label: 'Todos' },
   { key: 'valid', label: 'Válidos' },
-  { key: 'great', label: 'Ótimos' },
 ]
 
-function passesQualityFilter(ratio: number, filter: QualityFilter): boolean {
-  if (filter === 'great') return ratio < 1.5
-  if (filter === 'valid') return ratio <= 3.0
+function passesQualityFilter(impact: RoomMergeImpact | undefined, filter: QualityFilter): boolean {
+  if (filter === 'valid') return !!impact?.calculable && impact.deltaPower > 0
   return true
 }
 
@@ -229,7 +238,8 @@ const REACH_TABS: { key: ReachFilter; label: string; minLevel: number }[] = [
 
 type SortOption =
   | 'padrao'
-  | 'custo-beneficio'
+  | 'custo-beneficio-isolado'
+  | 'custo-beneficio-real'
   | 'poder_desc'
   | 'poder_asc'
   | 'bonus_desc'
@@ -237,7 +247,8 @@ type SortOption =
 
 const SORT_OPTIONS: SortDropdownOption<SortOption>[] = [
   { value: 'padrao', label: 'Nome (A-Z)' },
-  { value: 'custo-beneficio', label: 'Custo-benefício' },
+  { value: 'custo-beneficio-isolado', label: 'Custo-benefício (isolado)' },
+  { value: 'custo-beneficio-real', label: 'Custo-benefício real' },
   { value: 'poder_desc', label: 'Poder ↓' },
   { value: 'poder_asc', label: 'Poder ↑' },
   { value: 'bonus_desc', label: 'Bônus ↓' },
@@ -252,10 +263,15 @@ function ChainStepRow({
   step,
   realOwnedAtFromLevel,
   ownedAtToLevel,
+  roomImpact,
 }: {
   step: ChainSimulation['steps'][number]
   realOwnedAtFromLevel: number
   ownedAtToLevel: number
+  // null quando não há sala carregada; RoomMergeImpact (calculable true/
+  // false) quando há -- ver comentário em FullChain sobre por que a
+  // maioria dos passos além do primeiro fica não-calculável.
+  roomImpact: RoomMergeImpact | null
 }) {
   // "Cópias" mostra só posse REAL (sala + colado) nesse nível específico --
   // NUNCA a cascata simulada (step.availableCopies/missingCopies, usada só
@@ -285,6 +301,8 @@ function ChainStepRow({
         fromBonus={step.fromBonus}
         toBonus={step.bonus}
       />
+
+      {roomImpact && <RoomImpactLine impact={roomImpact} />}
 
       <div className="mt-1.5 flex items-center justify-between">
         <span className="text-slate-400">Cópias</span>
@@ -339,17 +357,45 @@ function FullChain({
   currentLevel,
   simulation,
   ownedByNameLevelMap,
+  roomImpactContext,
 }: {
   miner: Miner
   currentLevel: number
   simulation: ChainSimulation
   ownedByNameLevelMap: Map<string, number>
+  roomImpactContext: RoomImpactContext | null
 }) {
   if (simulation.steps.length === 0) return null
 
   const last = simulation.steps[simulation.steps.length - 1]
   const currentPower = getMinerPowerAtLevel(miner, currentLevel)
   const powerGained = last.power - currentPower
+
+  // Impacto Real de CADA passo -- reaproveita computeRoomMergeImpact (mesma
+  // função do card principal, sem duplicar). Só é calculável quando as
+  // cópias do nível de ORIGEM daquele passo específico estão fisicamente na
+  // sala hoje -- como o jogador normalmente só tem cópias reais nos
+  // primeiros níveis da cadeia (os passos mais avançados dependem de
+  // merges ainda não feitos), é esperado que a maioria dos passos além do
+  // primeiro fique "não calculável". Isso é o comportamento correto (mesma
+  // regra já estabelecida pra "Cópias" mostrar só posse real), não um bug.
+  const stepImpacts = simulation.steps.map((step) => {
+    if (!roomImpactContext) return null
+    const stepMerge = miner.merges.find((mg) => mg.level === step.toLevel)
+    if (!stepMerge) return null
+    return computeRoomMergeImpact(
+      miner.id,
+      step.fromLevel,
+      step.requiredCopies,
+      stepMerge,
+      roomImpactContext.roomMiners,
+      roomImpactContext.resolvedRoomInstances,
+      roomImpactContext.roomRacks,
+      roomImpactContext.gamesPower,
+      roomImpactContext.accountBonusPercent,
+      roomImpactContext.maxPower,
+    )
+  })
 
   return (
     <div className="mt-3 space-y-2 border-t border-slate-800 pt-3">
@@ -372,17 +418,30 @@ function FullChain({
       </div>
 
       <div className="space-y-1.5">
-        {simulation.steps.map((step) => (
+        {simulation.steps.map((step, i) => (
           <ChainStepRow
             key={step.toLevel}
             step={step}
             realOwnedAtFromLevel={ownedByNameLevelMap.get(`${miner.name}::${step.fromLevel}`) ?? 0}
             ownedAtToLevel={ownedByNameLevelMap.get(`${miner.name}::${step.toLevel}`) ?? 0}
+            roomImpact={stepImpacts[i]}
           />
         ))}
       </div>
     </div>
   )
+}
+
+// Agrupa tudo que computeRoomMergeImpact precisa além dos parâmetros
+// específicos de cada merge -- evita repetir 6 props soltas em FullChain e
+// no useMemo que monta isso em Merges().
+interface RoomImpactContext {
+  roomMiners: RoomMiner[]
+  resolvedRoomInstances: ResolvedRoomMinerInstance[]
+  roomRacks: Rack[]
+  gamesPower: number
+  accountBonusPercent: number
+  maxPower: number
 }
 
 export default function Merges() {
@@ -601,15 +660,29 @@ export default function Merges() {
     return matchRoomMinerInstances(playerData.roomConfig.miners, minersData.miners)
   }, [playerData, minersData])
 
+  // Agrupa tudo que computeRoomMergeImpact precisa da sala/conta além dos
+  // parâmetros específicos de cada merge -- null quando não há sala
+  // carregada (nickname não buscado ou falhou), reaproveitado tanto no
+  // card principal quanto em cada passo da Cadeia Completa.
+  const roomImpactContext = useMemo<RoomImpactContext | null>(() => {
+    if (!playerData?.roomConfig) return null
+    return {
+      roomMiners: playerData.roomConfig.miners,
+      resolvedRoomInstances,
+      roomRacks: playerData.roomConfig.racks,
+      gamesPower: playerData.games,
+      accountBonusPercent: playerData.bonus_percent,
+      maxPower: playerData.max_power,
+    }
+  }, [playerData, resolvedRoomInstances])
+
   // Impacto real (delta de poder simulado) do PRÓXIMO merge de cada
-  // minerador -- Fase 1 do "Impacto Real na Sala": só o card principal por
-  // enquanto (Cadeia Completa e Alcance Real ficam pra uma próxima rodada).
-  // Reaproveita o mesmo motor do Simulador via computeRoomMergeImpact.
+  // minerador -- alimenta o badge de qualidade, os filtros "Válidos" e a
+  // ordenação "Custo-benefício real" no card principal. Reaproveita o
+  // mesmo motor do Simulador via computeRoomMergeImpact.
   const roomMergeImpacts = useMemo(() => {
     const map = new Map<string, RoomMergeImpact>()
-    if (!minersData || !playerData?.roomConfig) return map
-    const roomMiners = playerData.roomConfig.miners
-    const roomRacks = playerData.roomConfig.racks
+    if (!minersData || !roomImpactContext) return map
     for (const need of mergeNeeds) {
       const miner = minersById.get(need.minerId)
       const nextMerge = miner?.merges.find((mg) => mg.level === need.nextLevel)
@@ -621,22 +694,22 @@ export default function Merges() {
           need.currentLevel,
           need.requiredCopies,
           nextMerge,
-          roomMiners,
-          resolvedRoomInstances,
-          roomRacks,
-          playerData.games,
-          playerData.bonus_percent,
-          playerData.max_power,
+          roomImpactContext.roomMiners,
+          roomImpactContext.resolvedRoomInstances,
+          roomImpactContext.roomRacks,
+          roomImpactContext.gamesPower,
+          roomImpactContext.accountBonusPercent,
+          roomImpactContext.maxPower,
         ),
       )
     }
     return map
-  }, [mergeNeeds, minersById, resolvedRoomInstances, playerData, minersData])
+  }, [mergeNeeds, minersById, roomImpactContext, minersData])
 
   const filteredMergeNeeds = useMemo(() => {
     const filtered = mergeNeeds.filter((need) => {
       if (need.status !== statusFilter) return false
-      if (!passesQualityFilter(need.nextRatioPower, qualityFilter)) return false
+      if (!passesQualityFilter(roomMergeImpacts.get(need.minerId), qualityFilter)) return false
       const minReachLevel = REACH_TABS.find((tab) => tab.key === reachFilter)?.minLevel ?? 0
       if (minReachLevel > 0) {
         const reachedLevel = chainSimulations.get(need.minerId)?.reachedLevel ?? need.currentLevel
@@ -650,8 +723,23 @@ export default function Merges() {
     // nextPower/nextBonus porque o critério é por instância possuída, não
     // pelo nível mais forte absoluto do minerador).
     switch (sortOption) {
-      case 'custo-beneficio':
+      case 'custo-beneficio-isolado':
         return [...filtered].sort((a, b) => a.nextRatioPower - b.nextRatioPower)
+      case 'custo-beneficio-real': {
+        // Impacto Real ÷ custo total do merge (peças + taxa) em RLT --
+        // maior primeiro. Não-calculáveis (peças fora da sala, sem valor
+        // real pra comparar) vão pro final, fora da ordenação por score.
+        const scoreOf = (n: MergeNeed) => {
+          const impact = roomMergeImpacts.get(n.minerId)
+          if (!impact?.calculable) return null
+          const cost = n.mergeFeeCost + n.totalMissingPartsCost
+          if (cost <= 0) return impact.deltaPower > 0 ? Infinity : -Infinity
+          return impact.deltaPower / cost
+        }
+        const calculable = filtered.filter((n) => scoreOf(n) !== null)
+        const notCalculable = filtered.filter((n) => scoreOf(n) === null)
+        return [...calculable.sort((a, b) => scoreOf(b)! - scoreOf(a)!), ...notCalculable]
+      }
       case 'poder_desc':
         return [...filtered].sort((a, b) => b.nextPower - a.nextPower || b.nextBonus - a.nextBonus)
       case 'poder_asc':
@@ -663,7 +751,7 @@ export default function Merges() {
       default:
         return filtered
     }
-  }, [mergeNeeds, statusFilter, qualityFilter, reachFilter, chainSimulations, sortOption])
+  }, [mergeNeeds, statusFilter, qualityFilter, reachFilter, chainSimulations, sortOption, roomMergeImpacts])
 
   if (loadError) {
     return (
@@ -801,9 +889,14 @@ export default function Merges() {
 
                 <div className="flex flex-col items-end gap-1">
                   <SortDropdown options={SORT_OPTIONS} value={sortOption} onChange={setSortOption} />
-                  {sortOption === 'custo-beneficio' && (
+                  {sortOption === 'custo-beneficio-isolado' && (
                     <p className="text-[10px] text-slate-500">
                       Custo-benefício isolado (sem considerar bônus de sala)
+                    </p>
+                  )}
+                  {sortOption === 'custo-beneficio-real' && (
+                    <p className="text-[10px] text-slate-500">
+                      Impacto real na sala ÷ custo do merge -- não calculáveis vão pro final
                     </p>
                   )}
                 </div>
@@ -870,13 +963,21 @@ export default function Merges() {
                                 Pronto
                               </span>
                             )}
-                            <span
-                              className="rounded-full px-2 py-1 text-[10px] font-bold text-white"
-                              style={{ backgroundColor: getRatioColor(need.nextRatioPower) }}
-                              title="Qualidade do próximo merge (custo por Ph/s)"
-                            >
-                              {need.nextRatioPower.toFixed(2)} RLT/Ph
-                            </span>
+                            {(() => {
+                              const impact = roomMergeImpacts.get(need.minerId)
+                              const label = impact?.calculable
+                                ? `${impact.deltaPower >= 0 ? '+' : ''}${impact.deltaPercent.toFixed(2)}%`
+                                : 'N/D'
+                              return (
+                                <span
+                                  className="rounded-full px-2 py-1 text-[10px] font-bold text-white"
+                                  style={{ backgroundColor: getRoomImpactColor(impact) }}
+                                  title="Qualidade do próximo merge (Impacto Real na sala)"
+                                >
+                                  {label}
+                                </span>
+                              )
+                            })()}
                           </div>
                         </div>
 
@@ -1083,6 +1184,7 @@ export default function Merges() {
                                     currentLevel={need.currentLevel}
                                     simulation={simulation}
                                     ownedByNameLevelMap={ownedByNameLevelMap}
+                                    roomImpactContext={roomImpactContext}
                                   />
                                 )
                               })()}
