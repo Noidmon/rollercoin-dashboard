@@ -153,29 +153,49 @@ export function roomConfigToRackPlacements(roomConfig: { racks: Rack[] }): RackP
     }))
 }
 
+// Caixa de referência do spritesheet de minerador -- `nn={width:126,
+// height:100}` no bundle real. Achado do Prompt 55: NÃO é o mesmo `As` que
+// eu tinha rotulado antes como "provável tamanho de célula de miner" (essa
+// nota era um chute do início da investigação, nunca confirmado -- `As`
+// acabou sendo só um fallback de carregamento de RACK, sem relação com
+// isso aqui). `nn` é uma constante DISTINTA, genuinamente usada na fórmula
+// de miner abaixo, confirmada lendo o bundle de novo.
+const MINER_REFERENCE_WIDTH = 126
+const MINER_REFERENCE_HEIGHT = 100
+
 export interface MinerPixelBox {
   left: number
   top: number
   width: number
-  height: number
 }
 
-// Posição de UM minerador DENTRO do rack (coordenadas locais ao rack, 0,0 =
-// canto superior esquerdo da caixa de 75x120px do rack) -- fórmula real
-// extraída do bundle (função `eo`/helper `Xo` de gameSprites.js), não
-// aproximada:
+// Posição/tamanho de UM minerador DENTRO do rack -- fórmula real extraída
+// do bundle (função `eo` de RoomSimulatorPublicPage.js), branch de
+// fallback (GIF simples via `miners/{filename}.gif`) -- é a branch que
+// bate com o que a gente usa (miners.json só tem imagem `.gif` plana, não
+// um "sheet" com múltiplos frames de animação; a branch `!x`/"sheet" do
+// bundle depende de um asset que não temos acesso público, não implementada).
+//
+// Achado importante do Prompt 55 (CORRIGE o que tinha antes): a largura
+// renderizada NÃO escala com o frameWidth do minerador -- é uma constante
+// (nn.width * spriteScale) igual pra TODO minerador. Só a ALTURA muda por
+// minerador, e nem isso é setado explicitamente: o bundle deixa a altura
+// "auto" (proporção natural da imagem) e usa `transform:translateY(-100%)`
+// pra ancorar pela base sem precisar saber a altura de antemão. O
+// frameHeight do minerador entra só no offset de centralização vertical
+// `_`, não redimensiona nada.
 //
 //   r = miner.width===1 ? (miner.x===0 ? -17 : singleCellXOffset) : 0
 //   a = -(rackHeightCells - 1 - miner.y) * shelfPitch - baseLift
-//   centerX = RACK_BOX_WIDTH_PX/2 + r      -- ponto de ancoragem horizontal (centro)
-//   bottomY = RACK_BOX_HEIGHT_PX + a       -- ponto de ancoragem vertical (base)
-//   width  = (frameWidth  ?? 116) * spriteScale
-//   height = (frameHeight ?? 50)  * spriteScale
-//   left = centerX - width/2
-//   top  = bottomY - height
+//   centerX = RACK_BOX_WIDTH_PX/2 + r        -- ponto de ancoragem horizontal (centro)
+//   bottomY = RACK_BOX_HEIGHT_PX + a         -- ponto de ancoragem vertical (base)
+//   renderedWidth = MINER_REFERENCE_WIDTH * spriteScale         -- CONSTANTE, não por-minerador
+//   centeringOffset = (MINER_REFERENCE_HEIGHT - frameHeight) / 2 * spriteScale
+//   left = centerX - renderedWidth/2
+//   top  = bottomY + centeringOffset   -- topo do <img>, ANTES do translateY(-100%)
 export function minerPixelBoxInRack(
   rackHeightCells: number,
-  miner: { x: number; y: number; width: number; frameWidth?: number; frameHeight?: number },
+  miner: { x: number; y: number; width: number; frameHeight?: number },
 ): MinerPixelBox {
   const xOffset =
     miner.width === 1 ? (miner.x === 0 ? -MINER_SINGLE_CELL_X_OFFSET : MINER_SINGLE_CELL_X_OFFSET) : 0
@@ -184,8 +204,13 @@ export function minerPixelBoxInRack(
   const centerX = RACK_BOX_WIDTH_PX / 2 + xOffset
   const bottomY = RACK_BOX_HEIGHT_PX + yOffset
 
-  const width = (miner.frameWidth ?? 116) * MINER_SPRITE_SCALE
-  const height = (miner.frameHeight ?? 50) * MINER_SPRITE_SCALE
+  const frameHeight = miner.frameHeight ?? 50
+  const renderedWidth = MINER_REFERENCE_WIDTH * MINER_SPRITE_SCALE
+  const centeringOffset = ((MINER_REFERENCE_HEIGHT - frameHeight) / 2) * MINER_SPRITE_SCALE
 
-  return { left: centerX - width / 2, top: bottomY - height, width, height }
+  return {
+    left: centerX - renderedWidth / 2,
+    top: bottomY + centeringOffset,
+    width: renderedWidth,
+  }
 }

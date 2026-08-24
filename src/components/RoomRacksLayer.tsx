@@ -234,27 +234,26 @@ export default function RoomRacksLayer({ placements, miners }: RoomRacksLayerPro
                 x: minerPlacement.x,
                 y: minerPlacement.y,
                 width,
-                frameWidth: miner.frames_data?.frame_width,
                 frameHeight: miner.frames_data?.frame_height,
               })
 
               const minerImageUrl = miner._id ? (imageByInstanceId.get(miner._id) ?? null) : null
+              if (!minerImageUrl) return null
 
               return (
-                <div
+                <img
                   key={miner._id ?? index}
-                  className="pointer-events-none absolute"
-                  style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
+                  src={minerImageUrl}
+                  alt={miner.name ?? ''}
                   title={miner.name}
-                >
-                  {minerImageUrl && (
-                    <img
-                      src={minerImageUrl}
-                      alt={miner.name ?? ''}
-                      className="h-full w-full select-none object-contain [image-rendering:pixelated]"
-                    />
-                  )}
-                </div>
+                  // Altura NÃO é fixada -- fica "auto" (proporção natural do
+                  // .gif) e translateY(-100%) ancora pela base, exatamente
+                  // como a função real (`eo`, branch de fallback GIF) faz.
+                  // Fixar largura+altura como antes achatava/esticava
+                  // miners com proporções diferentes da suposta 116x50.
+                  className="pointer-events-none absolute max-w-none select-none [image-rendering:pixelated]"
+                  style={{ left: box.left, top: box.top, width: box.width, transform: 'translateY(-100%)' }}
+                />
               )
             })}
           </div>

@@ -1,5 +1,6 @@
 {
   "sala0": [
+    { "asset": "/room-background/essentials_scy.png", "left": 0, "top": 0, "width": 720, "height": 100, "speed": 0.1 },
     { "asset": "/room-background/decore1.png", "left": 0, "top": 2, "width": 90, "height": 123 },
     { "asset": "/room-background/decore1_light.png", "left": 0, "top": 13, "width": 90, "height": 112 },
     { "asset": "/room-background/decore2.png", "left": 90, "top": 12, "width": 90, "height": 113 },
@@ -13,15 +14,14 @@
     { "asset": "/room-background/decore10.png", "left": 540, "top": 300, "width": 180, "height": 149 },
     { "asset": "/room-background/essentials_trophy_shelf.png", "left": 180, "top": 0, "width": 90, "height": 125 },
     { "asset": "/room-background/essentials_chair.png", "left": 270, "top": 0, "width": 90, "height": 150 },
-    { "asset": "/room-background/essentials_Table.png", "left": 270, "top": 0, "width": 135, "height": 150 },
-    { "asset": "/room-background/essentials_scy.png", "left": 0, "top": 0, "width": 720, "height": 100, "speed": 0.1 }
+    { "asset": "/room-background/essentials_Table.png", "left": 270, "top": 0, "width": 135, "height": 150 }
   ],
   "salas1a3": [
+    { "asset": "/room-background/essentials_scy.png", "left": 0, "top": 0, "width": 720, "height": 100, "speed": 0.1 },
     { "asset": "/room-background/decore11.png", "left": 0, "top": 67, "width": 180, "height": 83 },
     { "asset": "/room-background/decore12.png", "left": 541, "top": 102, "width": 45, "height": 47 },
     { "asset": "/room-background/decore13.png", "left": 630, "top": 24, "width": 90, "height": 101 },
     { "asset": "/room-background/decore14.png", "left": 540, "top": 375, "width": 180, "height": 75 },
-    { "asset": "/room-background/decore15.png", "left": 540, "top": 300, "width": 180, "height": 75 },
-    { "asset": "/room-background/essentials_scy.png", "left": 0, "top": 0, "width": 720, "height": 100, "speed": 0.1 }
+    { "asset": "/room-background/decore15.png", "left": 540, "top": 300, "width": 180, "height": 75 }
   ]
 }

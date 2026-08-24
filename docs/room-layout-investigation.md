@@ -646,3 +646,91 @@ mais largo dentro dele (`min-width:auto` é o padrão CSS pra item flex) --
 nenhuma outra página tinha um descendente largo o suficiente (720px fixos
 antes de escalar) pra expor isso antes da sala virar responsiva.
 Correção: `<main className="min-w-0 flex-1 p-8">`.
+
+---
+
+# Atualização: ordem da janela/céu no array de decoração + tamanho real do minerador
+
+## 1. Bug de ordem: `essentials_scy.png` (janela/céu) tava por ÚLTIMO no array
+
+`public/data/roomBackgroundLayout.json` -- na Sala 0, `essentials_scy.png`
+(a janela/céu, `left:0,top:0,width:720,height:100`) foi transcrito por
+ÚLTIMO no array, DEPOIS de `essentials_trophy_shelf`/`essentials_chair`/
+`essentials_Table` (todos também em `top:0`, mesma faixa vertical). Como
+nenhum item de decoração tem z-index (confirmado: `RoomBackground.tsx`
+nunca aplicou nenhum), ordem do array = ordem de pintura -- o céu, por
+vir depois, cobria a estante/cadeira/mesa.
+
+Confirmado com cálculo real (não só suposição): pra Salas 1-3, a fileira
+superior de racks (`y=0`, `x=0..3`) genuinamente sobrepõe espacialmente a
+área do céu (rack box top:19-139 vs céu top:0-100 -- 6075px² de
+sobreposição real por rack, 4 racks afetados). Isso NÃO chegava a cortar
+racks/miners visualmente porque eles têm z-index numérico explícito
+(`Math.round(slot.top)`, sempre positivo) e decoração não tem nenhum --
+por regra de pintura CSS (CSS2.1 Apêndice E), um z-index positivo explícito
+sempre pinta por cima de qualquer elemento com z-index:auto, não importa a
+ordem no DOM. Mas a ORDEM entre elementos de decoração ENTRE SI (sem
+z-index nenhum, todos "auto") segue ordem de array pura -- por isso só a
+janela cobria a mobília, não os racks.
+
+**Correção**: mover `essentials_scy.png` pro INÍCIO de cada array (`sala0`
+e `salas1a3`) -- janela como fundo, decoração por cima, mesma ordem
+"tiles primeiro" que se aplicaria se tivéssemos uma camada de tiles
+separada (não temos, é tudo um array só).
+
+## 2. Tamanho do minerador -- fórmula errada usada até aqui
+
+Achado que EXIGIU reabrir o bundle: a nota antiga deste doc (`As =
+{width:126,height:100} // provável tamanho de célula renderizada de
+miner`) era um CHUTE do início da investigação, nunca confirmado -- e
+estava ERRADO. `As` acabou sendo (achado numa rodada posterior, já
+documentada acima) só um fallback de CARREGAMENTO de imagem de RACK, sem
+nenhuma relação com o tamanho final de minerador.
+
+A função real (`eo`, `RoomSimulatorPublicPage.js`) tem DUAS branches:
+
+- **Branch "sheet"** (spritesheet com múltiplos frames de animação,
+  carregado via `ne(c)`/`Ee(c)` por filename): usa `frameWidth`/
+  `frameHeight` do PRÓPRIO minerador escalados por `spriteScale` -- era a
+  fórmula que eu tinha implementado, mas essa branch depende de um asset
+  que não é o `.gif` público que `miners.json` expõe.
+- **Branch de fallback GIF** (`miners/{filename}.gif`, ativada quando o
+  "sheet" falha) -- **é a que bate com o que a gente usa de verdade**, já
+  que `miners.json`/`public/miners-icons/*.gif` são exatamente esse tipo
+  de asset:
+
+  ```js
+  nn = {width:126, height:100}   // constante DISTINTA de As, confirmada por busca direta
+  T = nn.width * spriteScale      // largura renderizada -- CONSTANTE, igual pra todo minerador
+  E = miner.frameHeight ?? 50
+  _ = (nn.height - E) / 2 * spriteScale   // offset de centralização vertical
+  // <img> final:
+  style: {
+    width: T,                 // não escala com o frameWidth do minerador!
+    left: i - T/2,             // i = centro-x do minerador (mesmo de sempre)
+    top: l + _,                 // l = base-y do minerador (mesmo de sempre)
+    transform: "translateY(-100%)",  // ancora pela base usando a altura NATURAL (auto) da imagem
+  }
+  // altura NÃO é setada explicitamente -- fica "auto" (proporção natural do .gif)
+  ```
+
+Ou seja: a largura final é uma CONSTANTE (63px = 126×0.5) igual pra
+qualquer minerador -- só a POSIÇÃO vertical varia por minerador (via `_`,
+que depende do `frameHeight` dele), e a ALTURA fica livre pra proporção
+natural da imagem em vez de forçada. Isso é bem diferente do que eu tinha
+implementado antes (width E height escalados por frameWidth/frameHeight do
+próprio minerador, ambos setados explicitamente) -- corrigido em
+`minerPixelBoxInRack` (`roomLayout.ts`) e no render (`RoomRacksLayer.tsx`,
+agora sem wrapper de altura fixa, `<img>` direto com `transform:
+translateY(-100%)`).
+
+## Verificação com dado real (conta NoID, 3 salas desbloqueadas)
+
+48/48 racks, 209/209 mineradores, 0 imagens quebradas, 0 overflow de
+página. Confirmado visualmente: móveis aparecem por cima do céu/parede
+(screenshot isolado só de fundo, sem racks); racks/miners não cortados
+mesmo nas posições com sobreposição espacial real (fileira superior de
+Salas 1-3); mineradores de tipos diferentes (zoom 2.5x, ~5 tipos)
+comparados lado a lado mostram proporção consistente entre si, preenchendo
+boa parte da altura da prateleira -- muito mais próximo da referência que
+a versão anterior (mineradores minúsculos/desproporcionais).
