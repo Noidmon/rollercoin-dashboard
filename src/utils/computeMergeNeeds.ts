@@ -55,8 +55,17 @@ export interface MergeNeed {
   nextBonus: number
 }
 
-// Compartilhado entre computeMergeNeeds e simulateMergeChain -- as duas
-// contas de "peças que faltam pra esse nível de merge" são idênticas.
+// Compartilhado entre computeMergeNeeds e simulateMergeChain (via Cadeia
+// Completa) -- as duas contas de "peças que faltam pra esse nível de
+// merge" são idênticas, então o fix abaixo vale pros dois lugares de uma
+// vez, sem precisar duplicar em simulateMergeChain.
+//
+// getActiveParts(merge, forgeDiscount) já devolve p.count DESCONTADO pela
+// forja (bug real corrigido: antes só missingCost recebia o desconto, a
+// quantidade bruta necessária nunca -- ver comentário completo/validação
+// em getActiveParts, minerMergeCalculator.ts). p.count aqui já É o
+// "needed" certo, então nada mais precisa mudar nessa função além de
+// passar forgeDiscount adiante pra getActiveParts.
 function computePartsNeeded(
   merge: MinerMerge,
   partsOwned: Map<string, number>,
@@ -64,7 +73,7 @@ function computePartsNeeded(
   partPrices: Record<string, number>,
   craftingPrices: CraftingPrices,
 ): PartNeed[] {
-  return getActiveParts(merge).map((p) => {
+  return getActiveParts(merge, forgeDiscount).map((p) => {
     const owned = partsOwned.get(`${p.rarity}:${p.type}`) ?? 0
     const missing = Math.max(0, p.count - owned)
     const price = getPartPrice(p.rarity, p.type, partPrices, craftingPrices)

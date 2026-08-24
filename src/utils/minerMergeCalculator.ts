@@ -2,6 +2,7 @@
 // observado (RC Calculator, de Ariel Ruiz), só para cálculo pessoal --
 // nenhum código-fonte de terceiros foi copiado ou redistribuído aqui.
 import type { Miner, MinerMerge } from '../types/miner'
+import { getDiscountedCraftQuantity } from '../data/partCraftingRecipes'
 
 export const FORGE_LEVELS = [
   { level: 1, discount: 0 },
@@ -122,7 +123,23 @@ export interface ActivePart {
 // getActiveParts retorna [] de propósito e a UI de /merges corretamente
 // não mostra nenhuma linha de peça -- não é bug de renderização nem de
 // sync, é o merge exigindo só cópias + taxa RLT.
-export function getActiveParts(merge: MinerMerge): ActivePart[] {
+//
+// `forgeDiscount` (opcional, default 0) reaproveita getDiscountedCraftQuantity
+// -- a MESMA fórmula já confirmada pro crafting peça-pra-peça (base -
+// Math.floor(base × desconto), NÃO Math.floor(base × (1-desconto))) --
+// aplicada aqui pela primeira vez à quantidade de peça CONSUMIDA num merge
+// de minerador. Bug real corrigido: antes o desconto de forja só reduzia o
+// custo em RLT da peça faltante, nunca a quantidade bruta necessária --
+// confirmado contra o jogo real (Boxing Spark, Uncommon->Rare, forja nível
+// 3/10%: base 12, jogo mostra "11/11", nós mostrávamos "11/12"; 12 -
+// floor(12×0.1) = 12-1 = 11, bate exato). Validado em 2 pontos reais
+// independentes, ambos em 10% (nível 3): esse caso do merge, e o caso
+// Epic->Legendary do crafting de peça (base 5, 10%: floor(5×0.1)=0, sem
+// redução) que já validava a MESMA fórmula noutro contexto. Ainda SEM
+// confirmação real em outras taxas de desconto (5%/15%/25%, níveis
+// 2/4/5) -- se um valor destoar do jogo real numa forja de outro nível,
+// comece a investigação por aqui.
+export function getActiveParts(merge: MinerMerge, forgeDiscount = 0): ActivePart[] {
   const parts: ActivePart[] = []
   const candidates: [PartType, number, number][] = [
     ['fan', merge.fanCount, merge.fanLevel],
@@ -132,7 +149,7 @@ export function getActiveParts(merge: MinerMerge): ActivePart[] {
   for (const [type, count, level] of candidates) {
     if (count <= 0) continue
     const rarity = levelToRarity(level)
-    if (rarity) parts.push({ type, rarity, count })
+    if (rarity) parts.push({ type, rarity, count: getDiscountedCraftQuantity(count, forgeDiscount) })
   }
   return parts
 }
@@ -276,7 +293,13 @@ export function calculateMergeCostTable(
       merge.fanCount * fanPrice +
       merge.wireCount * wirePrice +
       merge.hashboardCount * hashboardPrice
-    const totalPieces = merge.fanCount + merge.wireCount + merge.hashboardCount
+    // Quantidade EXIBIDA já descontada pela forja (getActiveParts abaixo) --
+    // ver comentário lá pra fórmula/validação. O custo em RLT (piecesCost
+    // acima) continua calculado sobre a quantidade BRUTA e descontado só
+    // depois via piecesCostDiscounted (escopo não tocado nessa correção,
+    // ver mesmo comentário sobre a questão em aberto de dupla-desconto).
+    const activeParts = getActiveParts(merge, forgeDiscount)
+    const totalPieces = activeParts.reduce((sum, p) => sum + p.count, 0)
 
     const piecesCostDiscounted = piecesCost * (1 - forgeDiscount)
     const mergeFeeDiscounted = merge.mergeFee * (1 - forgeDiscount)
@@ -291,7 +314,7 @@ export function calculateMergeCostTable(
     rows.push({
       merge,
       totalPieces,
-      activeParts: getActiveParts(merge),
+      activeParts,
       piecesCost: piecesCostDiscounted,
       mergeFeeCost: mergeFeeDiscounted,
       piecesPlusFee,
