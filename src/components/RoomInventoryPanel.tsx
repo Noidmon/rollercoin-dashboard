@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import Card from './Card'
 import SortDropdown, { type SortDropdownOption } from './SortDropdown'
 import { formatPower } from '../utils/formatPower'
@@ -28,7 +28,13 @@ const SORT_OPTIONS: SortDropdownOption<SortOption>[] = [
   { value: 'bonus_asc', label: 'BÔNUS: MENOR – MAIOR' },
 ]
 
-const PAGE_SIZE = 12
+// Referência (minaryganar) mostra UMA fileira de cards só, com as setas
+// trocando a fileira inteira -- não uma grade 2D. Card width fixo (px) +
+// gap usados tanto no CSS (inline, mesmo valor) quanto no cálculo de
+// quantos cabem por fileira via ResizeObserver, então os dois nunca
+// dessincronizam.
+const CARD_WIDTH_PX = 150
+const CARD_GAP_PX = 12
 
 function SearchIcon() {
   return (
@@ -73,7 +79,10 @@ function RarityBadge({ level }: { level: number }) {
 
 function MinerCard({ entry }: { entry: EnrichedMinerEntry }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-700 bg-slate-800">
+    <div
+      className="shrink-0 overflow-hidden rounded-lg border border-slate-700 bg-slate-800"
+      style={{ width: CARD_WIDTH_PX }}
+    >
       <div className="relative flex h-20 items-center justify-center bg-slate-900 p-2">
         <RarityBadge level={entry.matchedLevel} />
         {entry.image ? (
@@ -98,6 +107,36 @@ export default function RoomInventoryPanel({ entries }: { entries: EnrichedMiner
   const [widthFilter, setWidthFilter] = useState<Set<number>>(() => new Set([1, 2]))
   const [activeTab, setActiveTab] = useState<'racks' | 'miners'>('miners')
   const [page, setPage] = useState(0)
+
+  // Quantos cards cabem numa fileira só, medido de verdade via
+  // ResizeObserver (não um número fixo arbitrário) -- refaz o cálculo
+  // sempre que a largura disponível mudar (resize da janela, sidebar
+  // colapsada, etc). Fallback de 4 antes da primeira medição (evita
+  // "pular" de 1 pra N na primeira renderização).
+  //
+  // Ref CALLBACK (não useRef+useEffect) de propósito: esse componente
+  // retorna null inteiro até o primeiro import (entries.length === 0), e a
+  // fileira some/reaparece condicionalmente depois disso (aba Racks,
+  // filtro zerando os resultados). Um useEffect de deps [] só roda uma vez
+  // por instância -- se essa única execução cair num momento em que o nó
+  // ainda não existe (ex: antes do 1o import), o observer nunca é criado,
+  // mesmo quando a fileira aparece depois. Ref callback dispara toda vez
+  // que o nó do DOM muda de fato (monta/desmonta), então sempre reconecta.
+  const observerRef = useRef<ResizeObserver | null>(null)
+  const [perRow, setPerRow] = useState(4)
+
+  const setRowRef = useCallback((node: HTMLDivElement | null) => {
+    observerRef.current?.disconnect()
+    observerRef.current = null
+    if (!node) return
+    const observer = new ResizeObserver((observerEntries) => {
+      const width = observerEntries[0]?.contentRect.width ?? 0
+      const fit = Math.floor((width + CARD_GAP_PX) / (CARD_WIDTH_PX + CARD_GAP_PX))
+      setPerRow(Math.max(1, fit))
+    })
+    observer.observe(node)
+    observerRef.current = observer
+  }, [])
 
   function toggleWidth(width: number) {
     setWidthFilter((prev) => {
@@ -130,9 +169,9 @@ export default function RoomInventoryPanel({ entries }: { entries: EnrichedMiner
     }
   }, [entries, searchText, widthFilter, sortOption])
 
-  const pageCount = Math.max(1, Math.ceil(filteredSorted.length / PAGE_SIZE))
+  const pageCount = Math.max(1, Math.ceil(filteredSorted.length / perRow))
   const clampedPage = Math.min(page, pageCount - 1)
-  const pageEntries = filteredSorted.slice(clampedPage * PAGE_SIZE, clampedPage * PAGE_SIZE + PAGE_SIZE)
+  const pageEntries = filteredSorted.slice(clampedPage * perRow, clampedPage * perRow + perRow)
 
   if (entries.length === 0) return null
 
@@ -247,7 +286,11 @@ export default function RoomInventoryPanel({ entries }: { entries: EnrichedMiner
         </button>
       </div>
 
-      <div className="mt-4">
+      {/* rowRef sempre montado (mesmo nos estados vazio/placeholder) --
+          o ResizeObserver precisa de um nó estável pra não ficar "órfão"
+          quando a fileira de cards entra/sai condicionalmente (troca de
+          aba, filtro zerando os resultados). */}
+      <div ref={setRowRef} className="mt-4">
         {activeTab === 'racks' ? (
           <p className="rounded-md border border-slate-800 bg-slate-950/40 p-4 text-sm text-slate-500">
             Aba Racks ainda não implementada.
@@ -257,7 +300,7 @@ export default function RoomInventoryPanel({ entries }: { entries: EnrichedMiner
             Nenhum minerador encontrado com esses filtros.
           </p>
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+          <div className="flex flex-nowrap gap-3 overflow-x-auto">
             {pageEntries.map((entry) => (
               <MinerCard key={entry.key} entry={entry} />
             ))}
