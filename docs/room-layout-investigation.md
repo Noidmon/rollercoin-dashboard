@@ -459,3 +459,135 @@ fileiras organizadas (4/8/6 racks).
 Contagem depois da correção: continua 48/48 racks, 161/161 mineradores, 0
 imagens quebradas -- a correção foi só de POSIÇÃO, não afetou quantidade
 nem resolução de imagem.
+
+---
+
+# Atualização: tamanho do rack, 2ª rodada -- 75x120 era caixa-alvo, não o tamanho da imagem
+
+O Prompt 51 corrigiu a posição (âncora), mas o tamanho continuava errado:
+todos os racks apareciam com a MESMA proporção visual, embora um rack 2x3 e
+um 2x4 devessem parecer visivelmente diferentes. Duas rodadas de
+investigação até chegar na causa raiz real.
+
+## 1ª tentativa (descartada): medir naturalWidth/naturalHeight direto
+
+Medi os 72 arquivos reais de `public/racks-icons/*.webp` -- **todos têm o
+MESMO tamanho nativo, 126x100px**, não importa se são 2x3 (6 células) ou
+2x4 (8 células). Confirma que usar `naturalWidth`/`naturalHeight` direto
+como tamanho final (ideia inicial) não teria resolvido nada -- o tamanho do
+ARQUIVO não muda, só o quanto do canvas de 126x100 cada desenho realmente
+ocupa.
+
+## 2ª tentativa: recorte por canal alfa (`rackTrimBox.ts`)
+
+Implementado a partir de uma descrição detalhada do algoritmo real (lido
+via DevTools num print do bundle de produção, fornecido pelo usuário):
+varrer o canal alfa de cada imagem (limiar >24, ~10% opacidade), achar a
+bounding box do conteúdo visível, escalar essa caixa pra caber em 75x120
+(`RACK_BOX_WIDTH_PX`/`RACK_BOX_HEIGHT_PX`), desenhar a imagem INTEIRA nessa
+escala (não só o recorte), com `overflow:hidden` cortando o que sobra.
+
+**Resultado real (teste isolado, Golden Rack 6 2x3 vs Green Silk 8 2x4)**:
+funcionou -- proporções ficaram diferentes entre os dois, confirmando que a
+lógica de recorte-e-escala estava certa em princípio. MAS a arte visível
+ocupava só a metade ESQUERDA da caixa 75x120, com a direita vazia
+(transparente). Achado que motivou a investigação seguinte.
+
+## Causa raiz real: existe uma variante "game" do rack, sem precisar de recorte-por-alfa nenhum
+
+Lendo o bundle de novo (função `Zn`, componente que decide qual imagem de
+rack renderizar):
+
+```js
+function Zn({snapshot:e, rack:t}) {
+  const n = Hn(e, t.rackId), o = n ? $(n) : null   // "o" = imagem do CATÁLOGO (fallback)
+  const { gameSheet: i, gameFailed: l } = Qn(t.rackId)   // "i" = imagem "game" (CAMINHO PRIMÁRIO)
+  if (!l) {   // !gameFailed -- caminho normal, image "game" carregou
+    if (!i) return <></>
+    const frameWidth = Rn(i.naturalWidth)   // Rn = função "metade" de gameSprites.js
+    const box = Jn(i)
+    return <SpriteFrame sheet={i} frame={0} frameWidth={frameWidth} style={box} />
+  }
+  // só chega aqui se gameFailed=true -- ENTÃO cai no recorte-por-alfa sobre "o"
+  ...
+}
+```
+
+`Qn(rackId)` carrega `rollercoin/racks/game/{rackId}.png` -- **um path
+PÚBLICO, sem autenticação** (mesmo padrão já confirmado pra mineradores,
+`rollercoin/miners/game/{slug}.png`). Testei com `curl` puro, 13/13 tipos
+de rack da conta NoID respondem HTTP 200. O recorte-por-alfa
+(`rackTrimBox.ts`) só roda no `else` -- fallback pra quando esse arquivo
+"game" falha ao carregar, não é o caminho principal.
+
+### Por que a imagem "game" resolve o problema sem recorte
+
+Baixei e medi a imagem "game" de 6 racks reais (3 racks 2x3, 3 racks 2x4):
+
+| Rack | células | naturalWidth | naturalHeight |
+|---|---|---|---|
+| Golden Rack 6 | 2x3 | 300 | 176 |
+| Neon Rack 6 | 2x3 | 300 | 176 |
+| Trophy Rack 6 | 2x3 | 300 | 180 |
+| Green Silk 8 | 2x4 | 300 | 240 |
+| Carved North Rack 8 | 2x4 | 300 | 240 |
+| Trophy Rack 8 | 2x4 | 300 | 244 |
+
+**Largura nativa sempre 300px, independente do número de células -- só a
+ALTURA varia com o número de linhas.** Visualmente confirmado abrindo os
+PNGs: é um spritesheet de 2 ESTADOS lado a lado (normal | selecionado,
+150px cada), e cada estado já mostra o número CERTO de prateleiras (3
+pra um rack 2x3, 4 pra um 2x4) -- a proporção que faltava já vem pronta
+na própria imagem, sem precisar calcular nada por canal alfa.
+
+### Fórmula real (função `Jn` do bundle)
+
+```js
+function Jn(e) {
+  const n = Rn(e.naturalWidth) * se   // Rn=metade, se=0.5 -- frameWidth = naturalWidth/4
+  const o = e.naturalHeight * se       // frameHeight = naturalHeight/2
+  const r = j.width/2 - n/2            // left: centralizado horizontalmente
+  const a = j.height - o               // top: ancorado na base (mesma convenção de sempre)
+  return { left:r, top:a, width:n, height:o, right:r+n, bottom:a+o }
+}
+```
+
+Pra Golden Rack 6 (300x176): frameWidth=75 (=RACK_BOX_WIDTH_PX exato),
+frameHeight=88, top=120-88=32 (fica ancorado na base, com 32px vazios
+acima -- mesma lógica de racks mais curtos "afundarem" na caixa fixa, já
+documentada pro posicionamento de minerador). Pra Green Silk 8 (300x240):
+frameHeight=120 (preenche a caixa toda), top=0.
+
+## Implementação final
+
+- `src/utils/rackGameSpriteBox` (em `roomLayout.ts`): implementa a fórmula
+  acima.
+- `scripts/sync-rack-game-sprites.js`: sincroniza
+  `rollercoin/racks/game/{rackId}.png` pra
+  `public/racks-game-icons/{rackId}.png`, mesmo padrão idempotente dos
+  outros scripts. 72/72 racks do catálogo sincronizados com sucesso.
+- `RackImage` (em `RoomRacksLayer.tsx`): tenta o sprite "game" primeiro
+  (recorta só o estado "normal", metade esquerda, via wrapper com
+  `overflow:hidden`); se a imagem falhar ao carregar (`onError`), cai no
+  fallback de recorte-por-alfa (`rackTrimBox.ts` + catálogo `.webp`) --
+  mesma estrutura de fallback do bundle real.
+- `rackTrimBox.ts` e o array `Is`/`Ds` de crop-boxes por exceção
+  documentados anteriormente continuam válidos, só que agora como
+  FALLBACK, não caminho principal.
+
+## Verificação com dado real (conta NoID)
+
+Testado com a conta real -- 48/48 racks renderizados, TODOS os 48 usando o
+caminho primário (sprite "game", 0 caíram no fallback), 0 imagens
+quebradas. Contagem de mineradores mudou pra 209 (era 161 -- o usuário
+alterou a composição de racks/mineradores da conta manualmente entre
+sessões, não é bug). Visualmente: cada rack agora preenche a caixa 75x120
+inteira com o número certo de prateleiras (3 ou 4 conforme as células),
+nada de área vazia/transparente como na tentativa de recorte-por-alfa.
+
+Observação menor, não investigada a fundo (não bloqueante): uma linha
+verde fina de ~1px aparece na borda direita de vários racks nos
+screenshots -- possível resquício do "estado selecionado" (borda verde) do
+spritesheet vazando por arredondamento de subpixel no recorte. Não afeta a
+legibilidade/proporção geral; fica registrado aqui como possível
+refinamento futuro.

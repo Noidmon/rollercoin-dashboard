@@ -1,17 +1,20 @@
 import { cellToPixel, type PixelPosition } from '../data/cellToPixel'
 import type { Rack } from './calculatePower'
+import type { RackImageMetrics } from './rackTrimBox'
 
-// Tamanho FIXO da caixa de renderização de um rack em pixels -- confirmado
-// direto no bundle do minaryganar (duas constantes independentes, `j` e
-// `ks`, com o MESMO valor: {width:75,height:120}). Documentado em
-// docs/room-layout-investigation.md.
-//
-// Achado importante (diferente do que se poderia supor): o tamanho NÃO
-// escala com rack_info.width/height (células) -- um rack 2x3 (6 células) e
-// um rack 2x4 (8 células) usam a MESMA caixa 75x120px. O que muda é como as
-// linhas de mineradores se distribuem dentro dela (ver
-// minerPixelBoxInRack), não o tamanho externo do rack. Confirmado lendo a
-// função real de posicionamento (`eo`/`Tt` no bundle), não é suposição.
+// CORREÇÃO (Prompt 52): 75x120 NÃO é o tamanho renderizado da imagem do
+// rack -- é o tamanho da CAIXA-ALVO (slot) pra onde o conteúdo REAL
+// (não-transparente) da imagem é escalado. A confusão original (Prompt 50)
+// veio de supor que rack_info.width/height (células) determinava o tamanho
+// do rack proporcionalmente -- só que TODOS os 72 racks do catálogo
+// compartilham o MESMO canvas nativo (126x100px, confirmado medindo os
+// arquivos reais), não importa se são 2x3 ou 2x4 células. Usar 75x120
+// direto como `width`/`height` da tag <img> (como o Prompt 50 fazia)
+// deixava todo rack com a MESMA proporção visual, escondendo a diferença
+// real entre 2x3 e 2x4 -- que está em quanto do canvas de 126x100 cada
+// desenho ocupa (via alpha), não no arquivo em si. Ver rackTrimBox.ts pro
+// cálculo real (crop por canal alfa + escala), extraído do bundle de
+// produção do minaryganar.
 export const RACK_BOX_WIDTH_PX = 75
 export const RACK_BOX_HEIGHT_PX = 120
 
@@ -37,6 +40,74 @@ export function rackPixelBox(anchor: PixelPosition): { left: number; top: number
   return {
     left: anchor.left - RACK_BOX_WIDTH_PX / 2,
     top: anchor.top - RACK_BOX_HEIGHT_PX,
+  }
+}
+
+export interface RackImageRenderBox {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+// Posição/tamanho da imagem INTEIRA do rack (não só a parte recortada),
+// relativa ao canto superior esquerdo do slot 75x120 (que tem
+// overflow:hidden -- a imagem escalada extrapola o slot na maior parte dos
+// casos e fica cortada visualmente pelo container, de propósito).
+//
+// Fórmula extraída do bundle de produção real do minaryganar:
+//   scaleX = RACK_BOX_WIDTH_PX  / (trimBox.right  - trimBox.left)
+//   scaleY = RACK_BOX_HEIGHT_PX / (trimBox.bottom - trimBox.top)
+//   width  = naturalWidth  * scaleX   -- imagem INTEIRA escalada, não só o recorte
+//   height = naturalHeight * scaleY
+//   left = -trimBox.left * scaleX     -- desloca a imagem pra alinhar o
+//   top  = RACK_BOX_HEIGHT_PX - trimBox.bottom * scaleY   -- recorte com a caixa-alvo
+export function rackImageRenderBox(metrics: RackImageMetrics): RackImageRenderBox {
+  const { trimBox, naturalWidth, naturalHeight } = metrics
+  const scaleX = RACK_BOX_WIDTH_PX / (trimBox.right - trimBox.left)
+  const scaleY = RACK_BOX_HEIGHT_PX / (trimBox.bottom - trimBox.top)
+
+  return {
+    left: -trimBox.left * scaleX,
+    top: RACK_BOX_HEIGHT_PX - trimBox.bottom * scaleY,
+    width: naturalWidth * scaleX,
+    height: naturalHeight * scaleY,
+  }
+}
+
+const GAME_SPRITE_SCALE = 0.5
+
+export interface RackGameSpriteBox {
+  left: number
+  top: number
+  frameWidth: number // largura de UM estado (a imagem tem 2 lado a lado: normal + selecionado)
+  frameHeight: number
+}
+
+// Caminho PRIMÁRIO de renderização (Prompt 52, 2ª rodada) -- descoberto
+// lendo o bundle real (função Zn/hook Qn): existe uma variante "game" de
+// cada rack (rollercoin/racks/game/{rack_id}.png, pública, sincronizada por
+// scripts/sync-rack-game-sprites.js) que já vem na PROPORÇÃO CERTA por
+// linha -- sem precisar de recorte por canal alfa. É um spritesheet de 2
+// estados lado a lado (normal | selecionado, mesma largura cada);
+// confirmado com 6 racks reais da NoID (2x3 e 2x4): largura nativa sempre
+// 300px (150 por estado), altura nativa varia com o número de linhas
+// (~176-180 pra 2x3, ~240-244 pra 2x4).
+//
+// Fórmula (extraída do bundle, função Jn):
+//   frameWidth  = (naturalWidth / 2) * 0.5   -- metade da imagem (1 estado), depois escala .5
+//   frameHeight = naturalHeight * 0.5
+//   left = RACK_BOX_WIDTH_PX/2 - frameWidth/2   -- centralizado horizontalmente
+//   top  = RACK_BOX_HEIGHT_PX - frameHeight     -- ancorado na base (mesma convenção de sempre)
+export function rackGameSpriteBox(naturalWidth: number, naturalHeight: number): RackGameSpriteBox {
+  const frameWidth = (naturalWidth / 2) * GAME_SPRITE_SCALE
+  const frameHeight = naturalHeight * GAME_SPRITE_SCALE
+
+  return {
+    left: RACK_BOX_WIDTH_PX / 2 - frameWidth / 2,
+    top: RACK_BOX_HEIGHT_PX - frameHeight,
+    frameWidth,
+    frameHeight,
   }
 }
 

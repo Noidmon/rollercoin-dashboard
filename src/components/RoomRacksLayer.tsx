@@ -2,8 +2,11 @@ import { useEffect, useState } from 'react'
 import type { Miner } from '../utils/calculatePower'
 import { matchRoomMinerInstances } from '../utils/matchMinersInventory'
 import type { MinersData } from '../types/miner'
+import { getRackImageMetrics, type RackImageMetrics } from '../utils/rackTrimBox'
 import {
   minerPixelBoxInRack,
+  rackGameSpriteBox,
+  rackImageRenderBox,
   rackPixelBox,
   RACK_BOX_HEIGHT_PX,
   RACK_BOX_WIDTH_PX,
@@ -17,6 +20,87 @@ interface RackCatalogEntry {
 
 interface RacksJson {
   racks: RackCatalogEntry[]
+}
+
+// Caminho PRIMÁRIO: sprite "game" (public/racks-game-icons/{rackId}.png,
+// sincronizado por scripts/sync-rack-game-sprites.js) -- já vem na
+// proporção certa por número de linhas, sem precisar de recorte por canal
+// alfa. É um spritesheet de 2 estados lado a lado (normal | selecionado);
+// só usamos o primeiro (normal), recortado via o wrapper com
+// overflow:hidden abaixo. Se essa imagem falhar (rack raro sem sprite
+// "game" público), cai no FALLBACK: recorte por canal alfa sobre o
+// catálogo .webp (rackTrimBox.ts) -- mesma estrutura de fallback
+// confirmada no bundle real (`Zn`/`gameFailed`).
+function RackImage({
+  rackId,
+  fallbackSrc,
+  alt,
+}: {
+  rackId: string | undefined
+  fallbackSrc: string | null
+  alt: string
+}) {
+  const gameSpriteUrl = rackId ? `/racks-game-icons/${rackId}.png` : null
+
+  const [gameSpriteFailed, setGameSpriteFailed] = useState(false)
+  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null)
+  const [trimMetrics, setTrimMetrics] = useState<RackImageMetrics | null>(null)
+
+  useEffect(() => {
+    setGameSpriteFailed(false)
+    setNaturalSize(null)
+  }, [gameSpriteUrl])
+
+  useEffect(() => {
+    if (!gameSpriteFailed || !fallbackSrc) return
+    let cancelled = false
+    getRackImageMetrics(fallbackSrc).then((m) => {
+      if (!cancelled) setTrimMetrics(m)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [gameSpriteFailed, fallbackSrc])
+
+  if (gameSpriteUrl && !gameSpriteFailed) {
+    const box = naturalSize ? rackGameSpriteBox(naturalSize.width, naturalSize.height) : null
+    return (
+      <div
+        className="pointer-events-none absolute overflow-hidden"
+        style={
+          box
+            ? { left: box.left, top: box.top, width: box.frameWidth, height: box.frameHeight }
+            : { width: 0, height: 0 }
+        }
+      >
+        <img
+          src={gameSpriteUrl}
+          alt={alt}
+          onLoad={(e) =>
+            setNaturalSize({ width: e.currentTarget.naturalWidth, height: e.currentTarget.naturalHeight })
+          }
+          onError={() => setGameSpriteFailed(true)}
+          className="absolute left-0 top-0 select-none [image-rendering:pixelated]"
+          style={box ? { width: box.frameWidth * 2, height: box.frameHeight } : undefined}
+        />
+      </div>
+    )
+  }
+
+  // Fallback -- não renderiza nada até ter as métricas reais (evita mostrar
+  // no tamanho/posição errados por um instante e "pular" pro certo).
+  if (!fallbackSrc || !trimMetrics) return null
+
+  const box = rackImageRenderBox(trimMetrics)
+
+  return (
+    <img
+      src={fallbackSrc}
+      alt={alt}
+      className="pointer-events-none absolute select-none [image-rendering:pixelated]"
+      style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
+    />
+  )
 }
 
 interface RoomRacksLayerProps {
@@ -115,7 +199,11 @@ export default function RoomRacksLayer({ placements, miners }: RoomRacksLayerPro
         return (
           <div
             key={placement.instanceId}
-            className="absolute"
+            // overflow-hidden + relative: a imagem do rack é desenhada no
+            // tamanho NATURAL escalado (rackImageRenderBox), que costuma
+            // extrapolar a caixa 75x120 -- o corte visual pelo container é
+            // proposital (mesmo comportamento confirmado no bundle real).
+            className="absolute overflow-hidden"
             style={{
               left: box.left,
               top: box.top,
@@ -128,13 +216,7 @@ export default function RoomRacksLayer({ placements, miners }: RoomRacksLayerPro
             }}
             title={placement.name}
           >
-            {rackImage && (
-              <img
-                src={rackImage}
-                alt={placement.name}
-                className="pointer-events-none absolute h-full w-full select-none object-contain"
-              />
-            )}
+            <RackImage rackId={placement.rackId} fallbackSrc={rackImage} alt={placement.name} />
 
             {rackMiners.map((miner, index) => {
               const { placement: minerPlacement, width } = miner
