@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { usePlayer } from '../context/PlayerContext'
 import { useNetworkData } from '../context/NetworkDataContext'
 import { getLeagueInfo, getNextLeagueImageUrl, proxyImageUrl } from '../data/leagues'
@@ -8,6 +7,7 @@ import { isWithdrawable } from '../data/withdrawable'
 import { COIN_SYMBOL_TO_COINGECKO_ID } from '../services/prices'
 import Card from '../components/Card'
 import CurrencyIcon from '../components/CurrencyIcon'
+import LeagueBadge from '../components/LeagueBadge'
 
 function formatUSD(value: number | null): string {
   return value !== null && Number.isFinite(value)
@@ -20,32 +20,6 @@ function bestEarner(rows: CoinEarnings[], predicate: (row: CoinEarnings) => bool
     .filter(predicate)
     .filter((row) => row.dailyGainUSD !== null)
     .sort((a, b) => (b.dailyGainUSD ?? -Infinity) - (a.dailyGainUSD ?? -Infinity))[0] ?? null
-}
-
-function LeagueBadge({
-  src,
-  size,
-  active,
-}: {
-  src: string | null | undefined
-  size: number
-  active: boolean
-}) {
-  const [hidden, setHidden] = useState(false)
-
-  if (!src || hidden) return null
-
-  return (
-    <img
-      src={src}
-      onError={() => setHidden(true)}
-      width={size}
-      height={size}
-      className={`rounded-full border bg-slate-800 object-contain p-1 ${
-        active ? 'border-indigo-400' : 'border-slate-700 opacity-70'
-      }`}
-    />
-  )
 }
 
 function formatRegistrationDate(iso: string): string {

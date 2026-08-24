@@ -80,7 +80,13 @@ function RackImage({
             setNaturalSize({ width: e.currentTarget.naturalWidth, height: e.currentTarget.naturalHeight })
           }
           onError={() => setGameSpriteFailed(true)}
-          className="absolute left-0 top-0 select-none [image-rendering:pixelated]"
+          // max-w-none: o preflight do Tailwind aplica `img{max-width:100%}`
+          // por padrão -- sem isso, o <img> ficava CAPADO na largura do
+          // wrapper (75px) mesmo com width:150px inline, espremendo os 2
+          // estados do spritesheet (normal+selecionado) visualmente juntos
+          // dentro da caixa (bug real, confirmado via getBoundingClientRect
+          // com dado real: width relatado 75 quando o style dizia 150).
+          className="absolute left-0 top-0 max-w-none select-none [image-rendering:pixelated]"
           style={box ? { width: box.frameWidth * 2, height: box.frameHeight } : undefined}
         />
       </div>
@@ -97,7 +103,7 @@ function RackImage({
     <img
       src={fallbackSrc}
       alt={alt}
-      className="pointer-events-none absolute select-none [image-rendering:pixelated]"
+      className="pointer-events-none absolute max-w-none select-none [image-rendering:pixelated]"
       style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
     />
   )

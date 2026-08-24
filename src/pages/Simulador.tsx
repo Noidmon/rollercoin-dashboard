@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { usePlayer } from '../context/PlayerContext'
-import { calculateRoomPower, sumUniqueMinerBonusPercent } from '../utils/calculatePower'
-import { getLeagueInfo } from '../data/leagues'
+import { getLeagueInfo, proxyImageUrl } from '../data/leagues'
 import { formatPower } from '../utils/formatPower'
 import Card from '../components/Card'
 import RoomBackground from '../components/RoomBackground'
 import RoomRacksLayer from '../components/RoomRacksLayer'
+import ScaledRoomCanvas from '../components/ScaledRoomCanvas'
+import LeagueBadge from '../components/LeagueBadge'
 import { roomConfigToRackPlacements } from '../utils/roomLayout'
 import type { PlayerData } from '../context/PlayerContext'
 
@@ -14,12 +15,69 @@ import type { PlayerData } from '../context/PlayerContext'
 // (ficam desabilitadas, sem dado real pra mostrar).
 const ROOM_LEVELS = [0, 1, 2, 3]
 
+// Painel de stats ao lado da sala -- mesmos dados já exibidos no Dashboard
+// (poder atual, progresso de liga), reaproveitados aqui em vez de
+// recalculados, seguindo a composição da referência (painel + sala lado a
+// lado, não cards separados empilhados).
+function RoomStatsPanel({ playerData }: { playerData: PlayerData }) {
+  const { currentLeague, nextLeague, powerNeeded, progressPercent } = getLeagueInfo(
+    playerData.max_power,
+  )
+  const currentLeagueImageUrl = proxyImageUrl(playerData.currentLeagueImageUrl)
+
+  return (
+    <div className="flex w-full shrink-0 flex-col gap-4 lg:w-56">
+      <div>
+        <p className="text-xs uppercase tracking-wide text-slate-400">Poder Atual</p>
+        <p className="text-2xl font-bold text-emerald-400">{formatPower(playerData.max_power)}</p>
+      </div>
+
+      <div>
+        <p className="text-xs text-slate-400">
+          {nextLeague
+            ? `Faltam ${formatPower(powerNeeded)} pra próxima liga`
+            : 'Liga máxima atingida!'}
+        </p>
+        <div className="mt-2 flex items-center gap-2">
+          <LeagueBadge src={currentLeagueImageUrl} size={40} active />
+          <div className="flex-1">
+            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
+              <div
+                className="h-full rounded-full bg-indigo-500"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+            <p className="mt-1 text-xs text-slate-300">{currentLeague.name}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <p className="text-xs text-slate-400">Mineradores</p>
+          <p className="text-sm font-semibold text-slate-200">{formatPower(playerData.miners)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-slate-400">Bônus dos Racks</p>
+          <p className="text-sm font-semibold text-slate-200">{formatPower(playerData.racks)}</p>
+        </div>
+        <div className="col-span-2">
+          <p className="text-xs text-slate-400">Bônus de Sets</p>
+          <p className="text-sm font-semibold text-slate-200">
+            {formatPower(playerData.bonus)} ({(playerData.bonus_percent / 100).toFixed(2)}%)
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // Visual real da sala: fundo (RoomBackground) + racks/mineradores reais da
-// conta (RoomRacksLayer) sobrepostos no mesmo container 720x450. Botões 1-4
-// na lateral trocam qual sala é exibida -- só uma por vez, nunca todas
-// empilhadas (isso era o preview de debug de uma etapa anterior).
-function RoomVisualization({ roomConfig }: { roomConfig: PlayerData['roomConfig'] }) {
-  const placements = roomConfigToRackPlacements(roomConfig)
+// conta (RoomRacksLayer) sobrepostos no mesmo container, escalado pra
+// largura real disponível (ScaledRoomCanvas). Botões 1-4 na lateral trocam
+// qual sala é exibida -- só uma por vez.
+function RoomVisualization({ playerData }: { playerData: PlayerData }) {
+  const placements = roomConfigToRackPlacements(playerData.roomConfig)
   const unlockedLevels = new Set(placements.map((p) => p.roomLevel))
 
   const [selectedLevel, setSelectedLevel] = useState(() => Math.min(...unlockedLevels, 0))
@@ -36,38 +94,42 @@ function RoomVisualization({ roomConfig }: { roomConfig: PlayerData['roomConfig'
 
   return (
     <Card title="Sala">
-      <div className="flex items-start gap-3">
-        <div className="flex flex-col gap-2">
-          {ROOM_LEVELS.map((level) => {
-            const unlocked = unlockedLevels.has(level)
-            return (
-              <button
-                key={level}
-                type="button"
-                disabled={!unlocked}
-                onClick={() => setSelectedLevel(level)}
-                title={unlocked ? `Sala ${level}` : 'Sala não desbloqueada'}
-                className={`flex h-10 w-10 items-center justify-center rounded-md border text-sm font-bold transition ${
-                  !unlocked
-                    ? 'cursor-not-allowed border-slate-800 text-slate-700'
-                    : selectedLevel === level
-                      ? 'border-indigo-400 bg-indigo-600 text-white'
-                      : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
-                }`}
-              >
-                {level + 1}
-              </button>
-            )
-          })}
-        </div>
+      <div className="flex flex-col gap-6 lg:flex-row">
+        <RoomStatsPanel playerData={playerData} />
 
-        <div>
-          <p className="mb-2 text-xs text-slate-400">
-            Sala {selectedLevel} ({racksInSelectedLevel.length} racks)
-          </p>
-          <div className="relative" style={{ width: 720, height: 450 }}>
-            <RoomBackground roomLevel={selectedLevel} />
-            <RoomRacksLayer placements={racksInSelectedLevel} miners={roomConfig.miners} />
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <div className="flex shrink-0 flex-col gap-2">
+            {ROOM_LEVELS.map((level) => {
+              const unlocked = unlockedLevels.has(level)
+              return (
+                <button
+                  key={level}
+                  type="button"
+                  disabled={!unlocked}
+                  onClick={() => setSelectedLevel(level)}
+                  title={unlocked ? `Sala ${level}` : 'Sala não desbloqueada'}
+                  className={`flex h-10 w-10 items-center justify-center rounded-md border text-sm font-bold transition ${
+                    !unlocked
+                      ? 'cursor-not-allowed border-slate-800 text-slate-700'
+                      : selectedLevel === level
+                        ? 'border-indigo-400 bg-indigo-600 text-white'
+                        : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  {level + 1}
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <p className="mb-2 text-xs text-slate-400">
+              Sala {selectedLevel} ({racksInSelectedLevel.length} racks)
+            </p>
+            <ScaledRoomCanvas>
+              <RoomBackground roomLevel={selectedLevel} />
+              <RoomRacksLayer placements={racksInSelectedLevel} miners={playerData.roomConfig.miners} />
+            </ScaledRoomCanvas>
           </div>
         </div>
       </div>
@@ -75,36 +137,8 @@ function RoomVisualization({ roomConfig }: { roomConfig: PlayerData['roomConfig'
   )
 }
 
-interface SimMinerRow {
-  id: string
-  name?: string
-  minerId?: string
-  power: number
-  bonusPercent: number
-  rackId: string | null
-}
-
 export default function Simulador() {
   const { playerData } = usePlayer()
-  const [miners, setMiners] = useState<SimMinerRow[]>([])
-
-  useEffect(() => {
-    if (!playerData) {
-      setMiners([])
-      return
-    }
-
-    setMiners(
-      playerData.roomConfig.miners.map((miner, index) => ({
-        id: miner._id ?? `miner-${index}`,
-        name: miner.name,
-        minerId: miner.miner_id,
-        power: miner.power,
-        bonusPercent: miner.bonus_percent ?? 0,
-        rackId: miner.placement?.user_rack_id ?? null,
-      })),
-    )
-  }, [playerData])
 
   if (!playerData) {
     return (
@@ -117,192 +151,12 @@ export default function Simulador() {
     )
   }
 
-  const racks = playerData.roomConfig.racks
-
-  // O total do calculateRoomPower reflete a composição ATUAL da sala, que pode
-  // divergir do max_power real (marca d'água histórica da RollerCoin). Por isso
-  // usamos max_power como âncora e aplicamos só o delta calculado entre a
-  // composição real e a simulada — o desvio da fórmula se cancela na subtração.
-  const baselineCalc = calculateRoomPower(
-    playerData.roomConfig.miners,
-    racks,
-    playerData.games,
-    playerData.bonus_percent,
-    0,
-  )
-
-  // bonus_percent da conta é composto de "bônus dinâmico da sala" (soma dos
-  // bonus_percent únicos por tipo de minerador realmente equipado) + "bônus fixo
-  // externo" (itens/reserva, fora da sala, não muda com a simulação).
-  const realRoomBonusPercent = sumUniqueMinerBonusPercent(playerData.roomConfig.miners)
-  const externalFixedBonusPercent = playerData.bonus_percent - realRoomBonusPercent
-
-  const simulatedMinerObjects = miners.map((row) => ({
-    power: row.power,
-    placement: { user_rack_id: row.rackId },
-    miner_id: row.minerId,
-    bonus_percent: row.bonusPercent,
-  }))
-
-  const simulatedRoomBonusPercent = sumUniqueMinerBonusPercent(simulatedMinerObjects)
-  const simulatedBonusPercent = simulatedRoomBonusPercent + externalFixedBonusPercent
-
-  const simulatedCalc = calculateRoomPower(
-    simulatedMinerObjects,
-    racks,
-    playerData.games,
-    simulatedBonusPercent,
-    0,
-  )
-
-  const delta = simulatedCalc.total - baselineCalc.total
-  const currentTotal = playerData.max_power
-  const simulatedTotal = playerData.max_power + delta
-  const difference = delta
-
-  const currentLeagueInfo = getLeagueInfo(currentTotal)
-  const simulatedLeagueInfo = getLeagueInfo(simulatedTotal)
-  const leagueChanged =
-    simulatedLeagueInfo.currentLeague.name !== currentLeagueInfo.currentLeague.name
-
-  function updateMiner(id: string, patch: Partial<SimMinerRow>) {
-    setMiners((prev) => prev.map((row) => (row.id === id ? { ...row, ...patch } : row)))
-  }
-
-  function removeMiner(id: string) {
-    setMiners((prev) => prev.filter((row) => row.id !== id))
-  }
-
-  function addMiner() {
-    setMiners((prev) => [
-      ...prev,
-      { id: crypto.randomUUID(), power: 0, bonusPercent: 0, rackId: null },
-    ])
-  }
-
   return (
     <div>
       <h1 className="text-2xl font-semibold text-white">Simulador</h1>
 
-      <div className="mt-4 space-y-4">
-        <RoomVisualization roomConfig={playerData.roomConfig} />
-
-        <Card title="Poder Permanente Atual">
-          <p className="text-2xl font-bold text-white">{formatPower(currentTotal)}</p>
-          <p className="mt-1 text-xs text-slate-500">
-            (sem bônus temporário — o que conta para a liga)
-          </p>
-        </Card>
-
-        <Card title="Comparativo">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div>
-              <p className="text-xs text-slate-400">Poder atual</p>
-              <p className="text-lg text-slate-200">{formatPower(currentTotal)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-slate-400">Poder simulado</p>
-              <p className="text-lg text-slate-200">{formatPower(simulatedTotal)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-slate-400">Diferença</p>
-              <p
-                className={`text-lg font-semibold ${
-                  difference > 0
-                    ? 'text-emerald-400'
-                    : difference < 0
-                      ? 'text-red-400'
-                      : 'text-slate-200'
-                }`}
-              >
-                {difference >= 0 ? '+' : ''}
-                {formatPower(difference)}
-              </p>
-            </div>
-          </div>
-
-          <p className="mt-4 text-sm text-slate-300">
-            {leagueChanged
-              ? `⚠️ Essa mudança faria você ${
-                  simulatedTotal > currentTotal ? 'subir' : 'cair'
-                } para ${simulatedLeagueInfo.currentLeague.name}!`
-              : `Ainda dentro de ${simulatedLeagueInfo.currentLeague.name}.`}
-          </p>
-        </Card>
-
-        <Card title="Simulação">
-          <button
-            onClick={addMiner}
-            className="mb-4 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500"
-          >
-            Adicionar minerador hipotético
-          </button>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-slate-800 text-xs uppercase text-slate-400">
-                  <th className="py-2 pr-3 font-medium">Minerador</th>
-                  <th className="py-2 pr-3 font-medium">Power</th>
-                  <th className="py-2 pr-3 font-medium">Bônus %</th>
-                  <th className="py-2 pr-3 font-medium">Rack</th>
-                  <th className="py-2 pr-3"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {miners.map((row) => (
-                  <tr key={row.id} className="border-b border-slate-800/60">
-                    <td className="py-2 pr-3 text-slate-300">{row.name ?? row.id}</td>
-                    <td className="py-2 pr-3">
-                      <input
-                        type="number"
-                        value={row.power}
-                        onChange={(e) =>
-                          updateMiner(row.id, { power: Number(e.target.value) })
-                        }
-                        className="w-28 rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </td>
-                    <td className="py-2 pr-3">
-                      <input
-                        type="number"
-                        value={row.bonusPercent}
-                        onChange={(e) =>
-                          updateMiner(row.id, { bonusPercent: Number(e.target.value) })
-                        }
-                        className="w-24 rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </td>
-                    <td className="py-2 pr-3">
-                      <select
-                        value={row.rackId ?? ''}
-                        onChange={(e) =>
-                          updateMiner(row.id, { rackId: e.target.value || null })
-                        }
-                        className="rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      >
-                        <option value="">Sem rack</option>
-                        {racks.map((rack) => (
-                          <option key={rack._id} value={rack._id}>
-                            {`${rack.name ?? rack._id} (+${(rack.bonus / 100).toFixed(2)}%)`}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="py-2 pr-3">
-                      <button
-                        onClick={() => removeMiner(row.id)}
-                        className="rounded-md border border-red-500/40 px-2 py-1 text-xs text-red-400 hover:bg-red-500/10"
-                      >
-                        Remover
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+      <div className="mt-4">
+        <RoomVisualization playerData={playerData} />
       </div>
     </div>
   )

@@ -591,3 +591,58 @@ screenshots -- possível resquício do "estado selecionado" (borda verde) do
 spritesheet vazando por arredondamento de subpixel no recorte. Não afeta a
 legibilidade/proporção geral; fica registrado aqui como possível
 refinamento futuro.
+
+---
+
+# Atualização: bug real "rack partido em duas metades" -- não era a ancoragem, era o preflight do Tailwind
+
+Depois do Prompt 53, o rack parecia mostrar os 2 estados do spritesheet
+(normal + selecionado) lado a lado dentro da mesma caixa, em vez de só o
+"normal" recortado -- como se a imagem tivesse sido "espremida" na
+largura. A suspeita inicial (erro de sinal na ancoragem centro-horizontal)
+estava errada -- a ancoragem sempre esteve certa.
+
+## Causa raiz: `img { max-width: 100% }` do preflight do Tailwind
+
+O `<img>` do rack é renderizado com `width: 150px` inline (frameWidth*2 --
+os 2 estados lado a lado), dentro de um wrapper com `width: 75px` +
+`overflow:hidden` (só o estado "normal", à esquerda, devia ficar visível).
+**O preflight do Tailwind aplica `img, video { max-width: 100%; height:
+auto }` por padrão em qualquer `<img>`** -- isso CAPA a largura renderizada
+no `max-width` do elemento em si (100% = 75px, herdado do wrapper), MESMO
+com `width:150px` definido inline. `max-width` sempre vence sobre `width`
+explícito quando o valor de `width` excede o `max-width` -- não é uma
+questão de especificidade CSS normal.
+
+Resultado: o navegador comprimia a imagem NATIVA INTEIRA (300px, os 2
+estados) pra caber em 75px, em vez de mostrar só os primeiros 75px
+(1 estado) cortados pelo `overflow:hidden` -- por isso os 2 estados
+apareciam espremidos lado a lado dentro da mesma caixa, parecendo "imagem
+partida ao meio".
+
+Confirmado com dado real via `getBoundingClientRect()`: o `<img>` tinha
+`style="width:150px"` mas `rect.width` relatava `75` -- a prova direta do
+cap do `max-width`.
+
+**Correção**: adicionar a classe `max-w-none` (Tailwind, `max-width:none`)
+em TODOS os `<img>` posicionados com largura explícita que pode exceder o
+container -- aplicado nos dois caminhos de `RackImage` (game sprite +
+fallback alpha-trim) e preventivamente em `RoomBackground.tsx` (nenhuma
+decoração excede o container hoje, mas evita a mesma classe de bug se
+mudar). O próprio bundle do minaryganar já usa `max-w-none` explicitamente
+nas classes dos `<img>` dele -- eu tinha visto isso numa investigação
+anterior mas não tinha entendido a razão até bater nesse bug de verdade.
+
+## Bug relacionado (efeito colateral da sala responsiva): overflow horizontal da página inteira
+
+Ao tornar a sala responsiva (escala via `transform:scale()` calculado por
+`ResizeObserver`, pra usar a largura real disponível em vez de 720px fixos
+-- ver `ScaledRoomCanvas.tsx`), a página inteira ganhou scroll horizontal
+em telas mais estreitas (`document.body.scrollWidth` > `clientWidth`).
+
+Causa: `<main className="flex-1 p-8">` em `Layout.tsx` não tinha
+`min-w-0`. Item flex sem `min-w-0` tem largura mínima igual ao conteúdo
+mais largo dentro dele (`min-width:auto` é o padrão CSS pra item flex) --
+nenhuma outra página tinha um descendente largo o suficiente (720px fixos
+antes de escalar) pra expor isso antes da sala virar responsiva.
+Correção: `<main className="min-w-0 flex-1 p-8">`.
