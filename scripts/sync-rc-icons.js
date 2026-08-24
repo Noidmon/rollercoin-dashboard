@@ -53,6 +53,15 @@ const FIXED_UI_ASSETS = [
   'rollercoin/levels/level_4.webp',
   'rollercoin/levels/level_5.webp',
   'rollercoin/levels/level_6.webp',
+  // level_legacy: usado pra merges nível 7+ (ou type "old_merge"/"legacy")
+  // em vez de um level_7.webp que não existe -- confirmado com curl
+  // (level_7 dá 404, level_legacy dá 200). level_set: selo adicional
+  // (offset ao lado do selo de nível) quando o minerador está num set
+  // ativo (`is_in_set` no room-config). Ambos usados no selo de nível da
+  // sala (Simulador, Fase B) -- ver Lt() documentado em
+  // docs/room-layout-investigation.md.
+  'rollercoin/levels/level_legacy.webp',
+  'rollercoin/levels/level_set.webp',
   'rollercoin/icons/sellable_disabled.webp',
   'rollercoin/icons/merge_enabled.webp',
   // Ícones de peça de merge (fan/wire/hashboard) x 5 raridades -- confirmado

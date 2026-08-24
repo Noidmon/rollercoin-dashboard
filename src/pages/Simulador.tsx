@@ -5,6 +5,7 @@ import { formatPower } from '../utils/formatPower'
 import Card from '../components/Card'
 import RoomBackground from '../components/RoomBackground'
 import RoomRacksLayer from '../components/RoomRacksLayer'
+import RoomInventoryPanel from '../components/RoomInventoryPanel'
 import ScaledRoomCanvas from '../components/ScaledRoomCanvas'
 import LeagueBadge from '../components/LeagueBadge'
 import { roomConfigToRackPlacements } from '../utils/roomLayout'
@@ -158,6 +159,8 @@ export default function Simulador() {
       <div className="mt-4">
         <RoomVisualization playerData={playerData} />
       </div>
+
+      <RoomInventoryPanel />
     </div>
   )
 }

@@ -779,3 +779,72 @@ Viewport estreito (900px): sala encolhe pra 502px, continua funcionando.
 desbloqueadas. Zoom na fileira superior de Sala 0 e Sala 1 (a última é
 onde há sobreposição espacial real com o céu, já confirmada antes) --
 nenhuma miner cortada em nenhuma das duas.
+
+---
+
+# Atualização: selo de nível/set sobre o minerador na sala (`Lt()`)
+
+Feature que nunca tinha sido portada pro visual da sala (só existia,
+numa forma diferente, no catálogo de `/mineradores`) -- confirmado via
+grep em `docs/` que não havia documentação real prévia sobre `Lt()`
+nesta sala, apesar de mencionado de passagem.
+
+## Lógica real (`Lt()`/`zt()`, bundle `RoomSimulatorPublicPage`)
+
+Ícones pequenos, `V = {width:11, height:8, gap:4}` (importado de
+`gameSprites.js`, distinto de qualquer constante de rack/miner já
+documentada aqui).
+
+Condição de exibição -- só desenha o selo de NÍVEL se:
+- `type === "old_merge"` ou `"legacy"` (minerador legado), OU
+- `type === "merge"` e `level > 0` (já sofreu merge)
+
+Miners `type === "basic"` (ou `level === 0`) NÃO recebem selo nenhum --
+confirmado com dado real (`The Christmas Eve`, `Power Patriot` nível 0).
+
+`level` no room-config é 0-INDEXED (número de merges já feitos). O
+número exibido no selo é `level + 1`. Se `displayLevel >= 7` (ou o
+minerador é legado), usa `levels/level_legacy.webp` em vez de um
+`levels/level_7.webp` -- que **não existe** (confirmado: `level_7.webp`
+dá 404 no CDN, `level_legacy.webp` dá 200). Caso contrário, usa
+`levels/level_{displayLevel}.webp` (arquivos `level_1` a `level_6`
+existem).
+
+Se o minerador também está num set ativo (`is_in_set` no room-config),
+desenha um SEGUNDO selo, `levels/level_set.webp`, com offset horizontal
+= `MINER_BADGE_WIDTH + gap` (11 + 4 = 15px) à direita do selo de nível.
+
+Âncora do selo: uma caixa de referência DIFERENTE da caixa de render do
+próprio sprite do minerador. Usa a fórmula ANTIGA (pré-correção do
+Prompt 55) baseada em `frameWidth`/`frameHeight` por minerador
+(`(frameWidth ?? 116) * spriteScale`, `(frameHeight ?? 50) * spriteScale`)
+-- confirmado DIRETO no bundle que isso é intencional pro selo
+especificamente, não um resquício desatualizado a "corrigir" pra bater
+com a caixa de largura constante (63px) usada pelo sprite do minerador
+em si.
+
+Implementado em `minerLevelBadges()` (`src/utils/roomLayout.ts`),
+espelhando `Lt()`/`zt()` linha a linha. Assets sincronizados via
+`scripts/sync-rc-icons.js` (`FIXED_UI_ASSETS`): `level_legacy.webp` e
+`level_set.webp` adicionados (os `level_1..6.webp` já existiam).
+
+## Verificação com dado real (conta NoID)
+
+Testado via Playwright, zoom em mineradores reais de níveis distintos
+(room-config real, Sala 0 e Sala 2):
+
+| Minerador | `level` (0-idx) | `type` | `is_in_set` | Selo esperado | Selo renderizado |
+|---|---|---|---|---|---|
+| The Christmas Eve | 0 | basic | false | nenhum | nenhum ✓ |
+| Power Patriot | 0 | basic | false | nenhum | nenhum ✓ |
+| Power Patriot | 1 | merge | false | "II" | "II" (verde) ✓ |
+| Crypto-Cola | 2 | merge | false | "III" | "III" (ciano) ✓ |
+| Long Legs | 3 | merge | false | "IV" | "IV" (rosa) ✓ |
+| Wrongway Atlas | 4 | merge | true | "V" + set | "V" (amarelo) + selo set (roxo) ✓ |
+| Long Legs | 5 | merge | false | "VI" | "VI" (vermelho) ✓ |
+
+Todos os 7 casos batem exatamente com o dado real do room-config,
+inclusive o caso duplo (selo de nível + selo de set lado a lado) e os
+dois casos de ausência de selo (miners base/não mergeados). Posição
+confirmada no canto superior-esquerdo do sprite, batendo com a
+referência visual anexada pelo usuário.

@@ -22,6 +22,14 @@ export interface Miner {
     frame_height: number
     frames_count: number
   }
+  // Campos usados só pro selo de nível/set na sala (minerLevelBadges, em
+  // roomLayout.ts) -- vêm direto do room-config real. `level` é o número
+  // de merges já feitos (0-indexed, ex: base=0), NÃO o nível de raridade
+  // exibido no selo (que é level+1 -- confirmado comparando room-config
+  // real contra miners.json em investigação anterior).
+  type?: string
+  level?: number
+  is_in_set?: boolean
 }
 
 export interface Rack {

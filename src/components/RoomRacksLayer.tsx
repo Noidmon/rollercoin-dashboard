@@ -3,11 +3,15 @@ import type { Miner } from '../utils/calculatePower'
 import { matchRoomMinerInstances } from '../utils/matchMinersInventory'
 import type { MinersData } from '../types/miner'
 import { getRackImageMetrics, type RackImageMetrics } from '../utils/rackTrimBox'
+import { resolveAssetUrl } from '../utils/resolveAssetUrl'
 import {
+  minerLevelBadges,
   minerPixelBoxInRack,
   rackGameSpriteBox,
   rackImageRenderBox,
   rackPixelBox,
+  MINER_BADGE_HEIGHT,
+  MINER_BADGE_WIDTH,
   RACK_BOX_HEIGHT_PX,
   RACK_BOX_WIDTH_PX,
   type RackPlacement,
@@ -253,20 +257,50 @@ export default function RoomRacksLayer({ placements, miners }: RoomRacksLayerPro
               const minerImageUrl = miner._id ? (imageByInstanceId.get(miner._id) ?? null) : null
               if (!minerImageUrl) return null
 
+              // Selo de nível (e, se aplicável, de set) sobreposto no
+              // minerador -- feature nunca portada pro visual da sala até
+              // aqui (só existia no catálogo de /mineradores, contexto
+              // diferente). Ver minerLevelBadges() em roomLayout.ts.
+              const badges = minerLevelBadges(placement.heightCells, {
+                x: minerPlacement.x,
+                y: minerPlacement.y,
+                width,
+                frameWidth: miner.frames_data?.frame_width,
+                frameHeight: miner.frames_data?.frame_height,
+                type: miner.type,
+                level: miner.level,
+                isInSet: miner.is_in_set,
+              })
+
               return (
-                <img
-                  key={miner._id ?? index}
-                  src={minerImageUrl}
-                  alt={miner.name ?? ''}
-                  title={miner.name}
-                  // Altura NÃO é fixada -- fica "auto" (proporção natural do
-                  // .gif) e translateY(-100%) ancora pela base, exatamente
-                  // como a função real (`eo`, branch de fallback GIF) faz.
-                  // Fixar largura+altura como antes achatava/esticava
-                  // miners com proporções diferentes da suposta 116x50.
-                  className="pointer-events-none absolute max-w-none select-none [image-rendering:pixelated]"
-                  style={{ left: box.left, top: box.top, width: box.width, transform: 'translateY(-100%)' }}
-                />
+                <div key={miner._id ?? index}>
+                  <img
+                    src={minerImageUrl}
+                    alt={miner.name ?? ''}
+                    title={miner.name}
+                    // Altura NÃO é fixada -- fica "auto" (proporção natural do
+                    // .gif) e translateY(-100%) ancora pela base, exatamente
+                    // como a função real (`eo`, branch de fallback GIF) faz.
+                    // Fixar largura+altura como antes achatava/esticava
+                    // miners com proporções diferentes da suposta 116x50.
+                    className="pointer-events-none absolute max-w-none select-none [image-rendering:pixelated]"
+                    style={{ left: box.left, top: box.top, width: box.width, transform: 'translateY(-100%)' }}
+                  />
+                  {badges.map((badge) => (
+                    <img
+                      key={badge.asset}
+                      src={resolveAssetUrl(badge.asset)}
+                      alt={badge.alt}
+                      className="pointer-events-none absolute max-w-none select-none [image-rendering:pixelated]"
+                      style={{
+                        left: badge.left,
+                        top: badge.top,
+                        width: MINER_BADGE_WIDTH,
+                        height: MINER_BADGE_HEIGHT,
+                      }}
+                    />
+                  ))}
+                </div>
               )
             })}
           </div>

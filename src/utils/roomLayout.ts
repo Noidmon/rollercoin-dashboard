@@ -214,3 +214,100 @@ export function minerPixelBoxInRack(
     width: renderedWidth,
   }
 }
+
+// Tamanho/gap dos selos de nível/set -- `V={width:11,height:8,gap:4}` no
+// bundle real (importado de gameSprites.js, mesma constante usada em
+// outras páginas do projeto pra badge de nível -- não confundir com o
+// V/`ks`/`j` dos racks, nomes minificados coincidem entre módulos
+// diferentes).
+export const MINER_BADGE_WIDTH = 11
+export const MINER_BADGE_HEIGHT = 8
+const MINER_BADGE_GAP = 4
+
+// Defaults usados SÓ pra ancorar o selo (não pro sprite do minerador em
+// si, que usa a caixa nn/constante desde o Prompt 55) -- confirmado lendo
+// a função real (`eo`) de novo: o selo usa uma caixa DIFERENTE (`R`),
+// baseada no frameWidth/frameHeight do PRÓPRIO minerador, a mesma fórmula
+// "antiga" que a gente usava pro sprite antes da correção do Prompt 55.
+// Não é inconsistência nossa -- o bundle real realmente ancora o selo
+// numa caixa diferente da usada pro sprite.
+const MINER_BADGE_ANCHOR_DEFAULT_FRAME_WIDTH = 116
+const MINER_BADGE_ANCHOR_DEFAULT_FRAME_HEIGHT = 50
+
+export interface MinerLevelBadgeEntry {
+  asset: string // caminho tipo "rollercoin/levels/level_3.webp" -- resolver via resolveAssetUrl
+  alt: string
+  left: number
+  top: number
+}
+
+// Selos de nível (e, se aplicável, de set) sobrepostos no minerador --
+// fórmula real extraída do bundle (`Lt()`, RoomSimulatorPublicPage.js).
+// Nunca implementado antes na sala (só existia em /mineradores, num
+// contexto de catálogo, não de overlay posicional) -- por isso "selo de
+// nível" ficou de fora da Fase B até agora, não é regressão de código já
+// escrito, é feature nunca portada pro visual da sala.
+//
+//   isLegacy = type==="old_merge" || type==="legacy"
+//   displayLevel = isLegacy ? 7 : level+1   -- level do room-config é
+//     0-indexed (nº de merges feitos); o selo mostra o nível de raridade
+//     1-indexed (confirmado comparando room-config real contra
+//     miners.json em investigação anterior)
+//   mostra o selo de nível só se isLegacy OU (type==="merge" && level>0)
+//     -- minerador base (level 0) não tem selo nenhum
+//   asset = displayLevel>=7 ? "levels/level_legacy.webp" : `levels/level_${displayLevel}.webp`
+//   se isInSet, adiciona um 2º selo "levels/level_set.webp" à direita do
+//     primeiro (offsetX = nº de selos já colocados × (largura+gap))
+export function minerLevelBadges(
+  rackHeightCells: number,
+  miner: {
+    x: number
+    y: number
+    width: number
+    frameWidth?: number
+    frameHeight?: number
+    type?: string
+    level?: number
+    isInSet?: boolean
+  },
+): MinerLevelBadgeEntry[] {
+  const xOffset =
+    miner.width === 1 ? (miner.x === 0 ? -MINER_SINGLE_CELL_X_OFFSET : MINER_SINGLE_CELL_X_OFFSET) : 0
+  const yOffset = -(rackHeightCells - 1 - miner.y) * MINER_SHELF_PITCH - MINER_BASE_LIFT
+  const centerX = RACK_BOX_WIDTH_PX / 2 + xOffset
+  const bottomY = RACK_BOX_HEIGHT_PX + yOffset
+
+  const anchorFrameWidth = (miner.frameWidth ?? MINER_BADGE_ANCHOR_DEFAULT_FRAME_WIDTH) * MINER_SPRITE_SCALE
+  const anchorFrameHeight = (miner.frameHeight ?? MINER_BADGE_ANCHOR_DEFAULT_FRAME_HEIGHT) * MINER_SPRITE_SCALE
+  const anchorLeft = centerX - anchorFrameWidth / 2
+  const anchorTop = bottomY - anchorFrameHeight
+
+  const entries: { asset: string; alt: string; offsetX: number }[] = []
+
+  const isLegacy = miner.type === 'old_merge' || miner.type === 'legacy'
+  const level = miner.level ?? 0
+  if (isLegacy || (miner.type === 'merge' && level > 0)) {
+    const displayLevel = isLegacy ? 7 : level + 1
+    const isMax = displayLevel >= 7
+    entries.push({
+      asset: isMax ? 'rollercoin/levels/level_legacy.webp' : `rollercoin/levels/level_${displayLevel}.webp`,
+      alt: isMax ? 'legacy' : `nivel ${displayLevel}`,
+      offsetX: 0,
+    })
+  }
+
+  if (miner.isInSet) {
+    entries.push({
+      asset: 'rollercoin/levels/level_set.webp',
+      alt: 'set',
+      offsetX: entries.length * (MINER_BADGE_WIDTH + MINER_BADGE_GAP),
+    })
+  }
+
+  return entries.map((entry) => ({
+    asset: entry.asset,
+    alt: entry.alt,
+    left: anchorLeft + entry.offsetX,
+    top: anchorTop,
+  }))
+}

@@ -29,6 +29,8 @@ export const ASSET_MANIFEST: Record<string, string> = {
   "rollercoin/levels/level_4.webp": "/rc-icons/level_4.webp",
   "rollercoin/levels/level_5.webp": "/rc-icons/level_5.webp",
   "rollercoin/levels/level_6.webp": "/rc-icons/level_6.webp",
+  "rollercoin/levels/level_legacy.webp": "/rc-icons/level_legacy.webp",
+  "rollercoin/levels/level_set.webp": "/rc-icons/level_set.webp",
   "rollercoin/miners/bronze_core.gif": "/miners-icons/bronze_core.gif",
   "rollercoin/miners/sunnybarn.gif": "/miners-icons/sunnybarn.gif",
   "rollercoin/parts/fan_common.webp": "/rc-icons/fan_common.webp",
