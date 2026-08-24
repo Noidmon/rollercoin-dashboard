@@ -734,3 +734,48 @@ Salas 1-3); mineradores de tipos diferentes (zoom 2.5x, ~5 tipos)
 comparados lado a lado mostram proporção consistente entre si, preenchendo
 boa parte da altura da prateleira -- muito mais próximo da referência que
 a versão anterior (mineradores minúsculos/desproporcionais).
+
+---
+
+# Atualização: upscale indevido da sala + miner cortada no topo do rack
+
+## 1. `ScaledRoomCanvas` fazia upscale em telas largas
+
+O `scale` calculado por `ResizeObserver` (`width / ROOM_WIDTH`) não tinha
+teto -- em telas largas (`largura disponível > 720px`), a sala era
+esticada MAIOR que o tamanho nativo, borrando os sprites de pixel art.
+Corrigido com `Math.min(1, width / ROOM_WIDTH)`.
+
+Isso sozinho não bastava: o container externo (`w-full` + `aspect-ratio`)
+continuava do tamanho do espaço disponível mesmo com o conteúdo escalado
+pra baixo, sobrando área vazia ao redor. Reestruturado em dois divs: um
+"de medição" (sempre `w-full`, só pra o `ResizeObserver` continuar
+detectando mudança de espaço disponível) e um "de tamanho real"
+(`width/height` explícitos = `ROOM_WIDTH/HEIGHT * scale`, já capado) que
+efetivamente ocupa só o espaço do conteúdo escalado.
+
+## 2. Miner cortada no topo do rack -- `overflow:hidden` no slot errado
+
+O container do SLOT (a caixa 75x120 de cada rack, em `RoomRacksLayer.tsx`)
+tinha `overflow:hidden` -- usado originalmente pra cortar a imagem do rack
+(que costuma extrapolar a caixa). Só que isso também cortava miners
+ancoradas com `transform:translateY(-100%)` (fórmula real, Prompt 55) que
+ultrapassam o topo do slot -- comportamento ESPERADO no jogo real (miners
+"vazam" pra cima da prateleira), não um bug a esconder.
+
+Correção: cada caminho de imagem de RACK agora recorta A SI MESMO num
+wrapper próprio (o caminho "game sprite" já fazia isso; adicionado o mesmo
+padrão no caminho de fallback alpha-trim, que antes dependia do overflow
+do slot pai) -- o slot em si não precisa mais de `overflow:hidden`
+nenhum. z-index por posição (`Math.round(slot.top)`, já implementado)
+continua garantindo a ordem de sobreposição certa entre racks de linhas
+diferentes.
+
+## Verificação com dado real (conta NoID)
+
+Viewport largo (1920px): sala renderiza a exatos 720px, nunca mais.
+Viewport estreito (900px): sala encolhe pra 502px, continua funcionando.
+48/48 racks, 209/209 mineradores, 0 quebrados, 0 overflow nas 3 salas
+desbloqueadas. Zoom na fileira superior de Sala 0 e Sala 1 (a última é
+onde há sobreposição espacial real com o céu, já confirmada antes) --
+nenhuma miner cortada em nenhuma das duas.

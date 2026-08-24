@@ -100,12 +100,23 @@ function RackImage({
   const box = rackImageRenderBox(trimMetrics)
 
   return (
-    <img
-      src={fallbackSrc}
-      alt={alt}
-      className="pointer-events-none absolute max-w-none select-none [image-rendering:pixelated]"
-      style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
-    />
+    // Wrapper de recorte PRÓPRIO (mesmo padrão do caminho "game sprite"
+    // acima) -- antes dependia do overflow:hidden do slot pai pra cortar a
+    // imagem escalada, mas isso também cortava miners que ultrapassam o
+    // topo do slot (transform:translateY(-100%) pode empurrar a miner pra
+    // cima de y=0). Cada caminho de imagem de rack agora recorta a si
+    // mesmo, então o slot pai não precisa mais de overflow:hidden nenhum.
+    <div
+      className="pointer-events-none absolute overflow-hidden"
+      style={{ left: 0, top: 0, width: RACK_BOX_WIDTH_PX, height: RACK_BOX_HEIGHT_PX }}
+    >
+      <img
+        src={fallbackSrc}
+        alt={alt}
+        className="absolute max-w-none select-none [image-rendering:pixelated]"
+        style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
+      />
+    </div>
   )
 }
 
@@ -205,11 +216,13 @@ export default function RoomRacksLayer({ placements, miners }: RoomRacksLayerPro
         return (
           <div
             key={placement.instanceId}
-            // overflow-hidden + relative: a imagem do rack é desenhada no
-            // tamanho NATURAL escalado (rackImageRenderBox), que costuma
-            // extrapolar a caixa 75x120 -- o corte visual pelo container é
-            // proposital (mesmo comportamento confirmado no bundle real).
-            className="absolute overflow-hidden"
+            // SEM overflow-hidden aqui de propósito (Prompt 56): miners
+            // ancoradas com transform:translateY(-100%) podem ultrapassar
+            // o topo do slot (75x120) -- isso é esperado e correto (mesmo
+            // comportamento do jogo real, miners "vazam" pra cima da
+            // prateleira). Cada imagem de RACK já recorta a si mesma (ver
+            // RackImage acima), então não precisa do slot cortar nada.
+            className="absolute"
             style={{
               left: box.left,
               top: box.top,
