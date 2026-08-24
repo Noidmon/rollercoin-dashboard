@@ -138,11 +138,13 @@ export default function RoomInventoryPanel({ entries }: { entries: EnrichedMiner
 
   return (
     <Card title="Inventário Importado" className="mt-4">
-      {/* Barra de navegação numa linha só (Prompt 58, correção 2) --
-          flex-wrap só entra em telas estreitas, alvo é uma linha em
-          desktop. */}
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/60 p-2">
-        <div className="relative min-w-[140px] flex-1">
+      {/* Barra de navegação numa linha só, SEMPRE (Prompt 59) -- flex-nowrap
+          força uma linha até em notebooks (1366px); se não couber mesmo com
+          a busca encolhendo ao mínimo, cai pra scroll horizontal
+          (overflow-x-auto) em vez de quebrar. Só a busca encolhe
+          (flex-1 + min-w baixo); o resto mantém largura fixa (shrink-0). */}
+      <div className="flex flex-nowrap items-center gap-2 overflow-x-auto rounded-lg border border-slate-700 bg-slate-800/60 p-2">
+        <div className="relative min-w-[90px] flex-1">
           <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2">
             <SearchIcon />
           </span>
@@ -158,14 +160,16 @@ export default function RoomInventoryPanel({ entries }: { entries: EnrichedMiner
           />
         </div>
 
-        <SortDropdown
-          options={SORT_OPTIONS}
-          value={sortOption}
-          onChange={(v) => {
-            setSortOption(v)
-            setPage(0)
-          }}
-        />
+        <div className="shrink-0">
+          <SortDropdown
+            options={SORT_OPTIONS}
+            value={sortOption}
+            onChange={(v) => {
+              setSortOption(v)
+              setPage(0)
+            }}
+          />
+        </div>
 
         <div className="flex shrink-0 gap-1.5">
           {[1, 2].map((width) => (
@@ -227,6 +231,20 @@ export default function RoomInventoryPanel({ entries }: { entries: EnrichedMiner
             →
           </button>
         </div>
+
+        {/* Placeholder visual -- vai abrir busca no catálogo público
+            (miners.json) pra adicionar hipoteticamente um minerador que o
+            jogador não possui à sala simulada (meio caminho entre o
+            inventário real e o Auto-Otimizador futuro). Sem funcionalidade
+            ainda, só o botão no lugar certo (Prompt 59). */}
+        <button
+          type="button"
+          disabled
+          title="Buscar minerador para testar (em breve)"
+          className="flex h-7 w-7 shrink-0 cursor-not-allowed items-center justify-center rounded-full bg-indigo-600/40 text-sm font-bold text-white/70"
+        >
+          +
+        </button>
       </div>
 
       <div className="mt-4">
