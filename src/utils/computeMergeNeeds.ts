@@ -64,8 +64,15 @@ export interface MergeNeed {
 // forja (bug real corrigido: antes só missingCost recebia o desconto, a
 // quantidade bruta necessária nunca -- ver comentário completo/validação
 // em getActiveParts, minerMergeCalculator.ts). p.count aqui já É o
-// "needed" certo, então nada mais precisa mudar nessa função além de
-// passar forgeDiscount adiante pra getActiveParts.
+// "needed" certo.
+//
+// missingCost = missing (já descontado) × preço cheio, SEM multiplicar
+// por (1-forgeDiscount) de novo (Prompt 62, corrige duplo desconto: a
+// versão anterior descontava a quantidade E o preço da mesma peça).
+// Suposição ainda não confirmada contra o jogo real (mesma limitação do
+// Prompt 61): que o preço de mercado da peça não sofre desconto de forja
+// nenhum, só a quantidade necessária -- se aparecer um custo RLT real
+// destoando, comece a investigação aqui.
 function computePartsNeeded(
   merge: MinerMerge,
   partsOwned: Map<string, number>,
@@ -77,7 +84,7 @@ function computePartsNeeded(
     const owned = partsOwned.get(`${p.rarity}:${p.type}`) ?? 0
     const missing = Math.max(0, p.count - owned)
     const price = getPartPrice(p.rarity, p.type, partPrices, craftingPrices)
-    const missingCost = missing * price * (1 - forgeDiscount)
+    const missingCost = missing * price
 
     let craftAlternative: PartCraftingResult | null = null
     if (missing > 0) {

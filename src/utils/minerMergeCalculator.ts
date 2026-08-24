@@ -215,17 +215,6 @@ export function getPartPrice(
   return override !== undefined ? override : craftingPrices[rarity][type]
 }
 
-function getPartPriceByLevel(
-  type: PartType,
-  level: number,
-  overridePrices: Record<string, number>,
-  craftingPrices: CraftingPrices,
-): number {
-  const rarity = levelToRarity(level)
-  if (!rarity) return 0
-  return getPartPrice(rarity, type, overridePrices, craftingPrices)
-}
-
 // power dos mineradores/merges vem em Gh/s (mesma convenção de
 // formatPower.ts) -- Ph/s = Gh/s ÷ 1_000_000 (Gh->Th->Ph, ÷1000 cada).
 function powerGhSToPhS(powerGhS: number): number {
@@ -280,30 +269,25 @@ export function calculateMergeCostTable(
   let previousFinalCost = 0
 
   for (const merge of sortedMerges) {
-    const fanPrice = getPartPriceByLevel('fan', merge.fanLevel, overridePrices, craftingPrices)
-    const wirePrice = getPartPriceByLevel('wire', merge.wireLevel, overridePrices, craftingPrices)
-    const hashboardPrice = getPartPriceByLevel(
-      'hashboard',
-      merge.hashboardLevel,
-      overridePrices,
-      craftingPrices,
-    )
-
-    const piecesCost =
-      merge.fanCount * fanPrice +
-      merge.wireCount * wirePrice +
-      merge.hashboardCount * hashboardPrice
-    // Quantidade EXIBIDA já descontada pela forja (getActiveParts abaixo) --
-    // ver comentário lá pra fórmula/validação. O custo em RLT (piecesCost
-    // acima) continua calculado sobre a quantidade BRUTA e descontado só
-    // depois via piecesCostDiscounted (escopo não tocado nessa correção,
-    // ver mesmo comentário sobre a questão em aberto de dupla-desconto).
+    // Quantidade já descontada pela forja (ver comentário/validação em
+    // getActiveParts). O custo em RLT das peças (piecesCost) é essa
+    // quantidade JÁ DESCONTADA × preço cheio da peça -- SEM multiplicar
+    // por (1-forgeDiscount) de novo (Prompt 62, corrige duplo desconto:
+    // antes o custo saía da quantidade BRUTA × preço × (1-desconto), o que
+    // nem sequer batia com a fórmula floor-based da quantidade em si).
+    // Suposição AINDA NÃO confirmada contra o jogo real (mesma limitação
+    // documentada em getActiveParts): que o preço de mercado da peça não
+    // sofre desconto de forja nenhum, só a quantidade necessária -- se
+    // aparecer um custo RLT real destoando, comece a investigação aqui.
     const activeParts = getActiveParts(merge, forgeDiscount)
     const totalPieces = activeParts.reduce((sum, p) => sum + p.count, 0)
+    const piecesCost = activeParts.reduce(
+      (sum, p) => sum + p.count * getPartPrice(p.rarity, p.type, overridePrices, craftingPrices),
+      0,
+    )
 
-    const piecesCostDiscounted = piecesCost * (1 - forgeDiscount)
     const mergeFeeDiscounted = merge.mergeFee * (1 - forgeDiscount)
-    const piecesPlusFee = piecesCostDiscounted + mergeFeeDiscounted
+    const piecesPlusFee = piecesCost + mergeFeeDiscounted
 
     const finalCost = piecesPlusFee + merge.requiredPreviousCount * previousFinalCost
     previousFinalCost = finalCost
@@ -315,7 +299,7 @@ export function calculateMergeCostTable(
       merge,
       totalPieces,
       activeParts,
-      piecesCost: piecesCostDiscounted,
+      piecesCost,
       mergeFeeCost: mergeFeeDiscounted,
       piecesPlusFee,
       finalCost,
