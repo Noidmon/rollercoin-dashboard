@@ -1,0 +1,92 @@
+import { useEffect, useState } from 'react'
+import { parseMinersInventory } from '../utils/parseMinersInventory'
+import { buildMinersByNormalizedNameMap, resolveMinerLevel } from '../utils/matchMinersInventory'
+import { getMinerBonusAtLevel, getMinerPowerAtLevel } from '../utils/minerMergeCalculator'
+import type { MinersData, Miner } from '../types/miner'
+
+export interface EnrichedMinerEntry {
+  key: string
+  name: string
+  power: number
+  bonus: number
+  cells: number
+  image: string | null
+  quantity: number
+  matchedLevel: number
+}
+
+// Estado do inventário colado (Simulador) compartilhado entre o campo de
+// colar (dentro do painel de stats) e o painel de resultados (abaixo da
+// sala) -- por isso vive num hook único chamado uma vez em Simulador() e
+// repassado como props, em vez de duplicado em cada componente.
+//
+// Reaproveita parseMinersInventory + buildMinersByNormalizedNameMap/
+// resolveMinerLevel (as mesmas peças exportadas por matchMinersInventory.ts
+// pra esse fim) em vez de matchMinersInventory diretamente -- essa agrega em
+// quantidade e descarta a referência ao Miner do catálogo, mas aqui
+// precisamos dela pra poder/bônus/células/imagem de cada entrada.
+export function useMinersInventoryImport() {
+  const [minersData, setMinersData] = useState<MinersData | null>(null)
+  const [pasteText, setPasteText] = useState('')
+  const [entries, setEntries] = useState<EnrichedMinerEntry[]>([])
+  const [unrecognizedCount, setUnrecognizedCount] = useState<number | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/data/miners.json')
+      .then((res) => {
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+        return res.json() as Promise<MinersData>
+      })
+      .then((json) => {
+        if (!cancelled) setMinersData(json)
+      })
+      .catch(() => {
+        if (!cancelled) setMinersData({ generatedAt: '', total: 0, totalMerges: 0, miners: [] })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  function handleImport() {
+    if (!minersData) return
+
+    const parsed = parseMinersInventory(pasteText)
+    const minersByNormalizedName = buildMinersByNormalizedNameMap(minersData.miners)
+
+    const next: EnrichedMinerEntry[] = []
+    let unrecognized = 0
+
+    parsed.forEach((entry, index) => {
+      const resolved = resolveMinerLevel(entry.name, entry.powerValue, minersByNormalizedName)
+      if (!resolved) {
+        unrecognized++
+        return
+      }
+      const miner: Miner = resolved.miner
+      next.push({
+        key: `${miner.id}-${resolved.matchedLevel}-${index}`,
+        name: miner.name,
+        power: getMinerPowerAtLevel(miner, resolved.matchedLevel),
+        bonus: getMinerBonusAtLevel(miner, resolved.matchedLevel),
+        cells: miner.cells,
+        image: miner.image,
+        quantity: entry.quantity,
+        matchedLevel: resolved.matchedLevel,
+      })
+    })
+
+    setEntries(next)
+    setUnrecognizedCount(unrecognized)
+  }
+
+  return {
+    minersReady: minersData !== null,
+    pasteText,
+    setPasteText,
+    entries,
+    unrecognizedCount,
+    handleImport,
+  }
+}

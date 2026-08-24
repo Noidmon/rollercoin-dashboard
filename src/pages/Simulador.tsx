@@ -6,9 +6,11 @@ import Card from '../components/Card'
 import RoomBackground from '../components/RoomBackground'
 import RoomRacksLayer from '../components/RoomRacksLayer'
 import RoomInventoryPanel from '../components/RoomInventoryPanel'
+import InventoryPasteField from '../components/InventoryPasteField'
 import ScaledRoomCanvas from '../components/ScaledRoomCanvas'
 import LeagueBadge from '../components/LeagueBadge'
 import { roomConfigToRackPlacements } from '../utils/roomLayout'
+import { useMinersInventoryImport } from '../hooks/useMinersInventoryImport'
 import type { PlayerData } from '../context/PlayerContext'
 
 // A RollerCoin permite até 4 salas por conta (níveis 0-3) -- os 4 botões
@@ -20,7 +22,21 @@ const ROOM_LEVELS = [0, 1, 2, 3]
 // (poder atual, progresso de liga), reaproveitados aqui em vez de
 // recalculados, seguindo a composição da referência (painel + sala lado a
 // lado, não cards separados empilhados).
-function RoomStatsPanel({ playerData }: { playerData: PlayerData }) {
+function RoomStatsPanel({
+  playerData,
+  pasteText,
+  onPasteTextChange,
+  onImport,
+  unrecognizedCount,
+  recognizedCount,
+}: {
+  playerData: PlayerData
+  pasteText: string
+  onPasteTextChange: (value: string) => void
+  onImport: () => void
+  unrecognizedCount: number | null
+  recognizedCount: number
+}) {
   const { currentLeague, nextLeague, powerNeeded, progressPercent } = getLeagueInfo(
     playerData.max_power,
   )
@@ -69,6 +85,14 @@ function RoomStatsPanel({ playerData }: { playerData: PlayerData }) {
           </p>
         </div>
       </div>
+
+      <InventoryPasteField
+        pasteText={pasteText}
+        onPasteTextChange={onPasteTextChange}
+        onImport={onImport}
+        unrecognizedCount={unrecognizedCount}
+        recognizedCount={recognizedCount}
+      />
     </div>
   )
 }
@@ -77,7 +101,21 @@ function RoomStatsPanel({ playerData }: { playerData: PlayerData }) {
 // conta (RoomRacksLayer) sobrepostos no mesmo container, escalado pra
 // largura real disponível (ScaledRoomCanvas). Botões 1-4 na lateral trocam
 // qual sala é exibida -- só uma por vez.
-function RoomVisualization({ playerData }: { playerData: PlayerData }) {
+function RoomVisualization({
+  playerData,
+  pasteText,
+  onPasteTextChange,
+  onImport,
+  unrecognizedCount,
+  recognizedCount,
+}: {
+  playerData: PlayerData
+  pasteText: string
+  onPasteTextChange: (value: string) => void
+  onImport: () => void
+  unrecognizedCount: number | null
+  recognizedCount: number
+}) {
   const placements = roomConfigToRackPlacements(playerData.roomConfig)
   const unlockedLevels = new Set(placements.map((p) => p.roomLevel))
 
@@ -96,7 +134,14 @@ function RoomVisualization({ playerData }: { playerData: PlayerData }) {
   return (
     <Card title="Sala">
       <div className="flex flex-col gap-6 lg:flex-row">
-        <RoomStatsPanel playerData={playerData} />
+        <RoomStatsPanel
+          playerData={playerData}
+          pasteText={pasteText}
+          onPasteTextChange={onPasteTextChange}
+          onImport={onImport}
+          unrecognizedCount={unrecognizedCount}
+          recognizedCount={recognizedCount}
+        />
 
         <div className="flex min-w-0 flex-1 items-start gap-3">
           <div className="flex shrink-0 flex-col gap-2">
@@ -140,6 +185,8 @@ function RoomVisualization({ playerData }: { playerData: PlayerData }) {
 
 export default function Simulador() {
   const { playerData } = usePlayer()
+  const { pasteText, setPasteText, entries, unrecognizedCount, handleImport } =
+    useMinersInventoryImport()
 
   if (!playerData) {
     return (
@@ -157,10 +204,17 @@ export default function Simulador() {
       <h1 className="text-2xl font-semibold text-white">Simulador</h1>
 
       <div className="mt-4">
-        <RoomVisualization playerData={playerData} />
+        <RoomVisualization
+          playerData={playerData}
+          pasteText={pasteText}
+          onPasteTextChange={setPasteText}
+          onImport={handleImport}
+          unrecognizedCount={unrecognizedCount}
+          recognizedCount={entries.length}
+        />
       </div>
 
-      <RoomInventoryPanel />
+      <RoomInventoryPanel entries={entries} />
     </div>
   )
 }

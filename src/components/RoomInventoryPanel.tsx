@@ -1,36 +1,22 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import Card from './Card'
 import SortDropdown, { type SortDropdownOption } from './SortDropdown'
 import { formatPower } from '../utils/formatPower'
-import { parseMinersInventory } from '../utils/parseMinersInventory'
-import { buildMinersByNormalizedNameMap, resolveMinerLevel } from '../utils/matchMinersInventory'
-import {
-  getMergeLevelColor,
-  getMinerBonusAtLevel,
-  getMinerLevelRarityName,
-  getMinerPowerAtLevel,
-} from '../utils/minerMergeCalculator'
-import type { MinersData, Miner } from '../types/miner'
+import { getMergeLevelColor } from '../utils/minerMergeCalculator'
+import { resolveAssetUrl } from '../utils/resolveAssetUrl'
+import type { EnrichedMinerEntry } from '../hooks/useMinersInventoryImport'
 
-// Painel do inventário de mineradores IMPORTADO (colado pelo jogador) --
+// Painel de RESULTADOS do inventário importado (colado pelo jogador) --
 // mesma filosofia de /merges (dado do usuário, nunca busca de catálogo
-// público pra esse fim). Reaproveita parseMinersInventory +
-// buildMinersByNormalizedNameMap/resolveMinerLevel (as mesmas peças já
-// usadas por matchMinersInventory.ts, exportadas justamente pra permitir
-// reaproveitamento sem duplicar a lógica de parsing/casamento) em vez de
-// matchMinersInventory diretamente -- essa função agrega em quantidade e
-// descarta a referência ao Miner do catálogo, mas aqui precisamos dela pra
-// mostrar poder/bônus/células/imagem de cada entrada.
+// público pra esse fim). O campo de colar em si fica no painel de stats
+// (InventoryPasteField, dentro de RoomStatsPanel) -- Prompt 58 moveu a UI
+// de colar pra lá, deixando esse componente só com busca/ordenação/filtro/
+// paginação/grid, alimentado via prop `entries` (mesmo estado, elevado a
+// Simulador() via useMinersInventoryImport).
 
-interface EnrichedEntry {
-  key: string
-  name: string
-  power: number
-  bonus: number
-  cells: number
-  image: string | null
-  quantity: number
-  matchedLevel: number
+const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X']
+function toRoman(n: number): string {
+  return ROMAN[n] ?? String(n)
 }
 
 type SortOption = 'poder_desc' | 'poder_asc' | 'bonus_desc' | 'bonus_asc'
@@ -42,120 +28,76 @@ const SORT_OPTIONS: SortDropdownOption<SortOption>[] = [
   { value: 'bonus_asc', label: 'BÔNUS: MENOR – MAIOR' },
 ]
 
-const PAGE_SIZE = 8
+const PAGE_SIZE = 12
 
-function MinerCard({ entry }: { entry: EnrichedEntry }) {
-  const color = getMergeLevelColor(entry.matchedLevel)
+function SearchIcon() {
   return (
-    <div className="relative rounded-lg border border-slate-800 bg-slate-950/60 p-3">
-      <button
-        type="button"
-        disabled
-        title="Adicionar à sala simulada (em breve)"
-        className="absolute right-2 top-2 flex h-6 w-6 cursor-not-allowed items-center justify-center rounded-full bg-indigo-600/40 text-sm font-bold text-white/70"
+    <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-slate-500">
+      <path
+        fillRule="evenodd"
+        d="M9 3.5a5.5 5.5 0 1 0 3.35 9.86l3.65 3.64a.75.75 0 1 0 1.06-1.06l-3.64-3.65A5.5 5.5 0 0 0 9 3.5ZM5 9a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"
+        clipRule="evenodd"
+      />
+    </svg>
+  )
+}
+
+// Selo de nível/raridade -- mesmo asset (rollercoin/levels/level_N.webp) e
+// mesmo fallback (bloco colorido com numeral romano) já usados em
+// MineradorDetalhe.tsx (LevelBadge). Level 0 (base, ainda não fundido) não
+// tem selo -- mesma regra confirmada em minerLevelBadges (Prompt 57).
+function RarityBadge({ level }: { level: number }) {
+  const [imgFailed, setImgFailed] = useState(false)
+  if (level <= 0) return null
+
+  if (imgFailed) {
+    return (
+      <span
+        className="absolute left-1 top-1 flex h-4 w-5 items-center justify-center rounded text-[9px] font-bold text-white"
+        style={{ backgroundColor: getMergeLevelColor(level) }}
       >
-        +
-      </button>
+        {toRoman(level)}
+      </span>
+    )
+  }
 
-      <div className="flex items-center gap-3">
+  return (
+    <img
+      src={resolveAssetUrl(`rollercoin/levels/level_${level}.webp`)}
+      alt={toRoman(level)}
+      onError={() => setImgFailed(true)}
+      className="absolute left-1 top-1 h-4 w-5 object-contain"
+    />
+  )
+}
+
+function MinerCard({ entry }: { entry: EnrichedMinerEntry }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-slate-700 bg-slate-800">
+      <div className="relative flex h-20 items-center justify-center bg-slate-900 p-2">
+        <RarityBadge level={entry.matchedLevel} />
         {entry.image ? (
-          <img src={entry.image} alt={entry.name} className="h-12 w-12 shrink-0 object-contain" />
+          <img src={entry.image} alt={entry.name} className="max-h-full max-w-full object-contain" />
         ) : (
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center text-slate-600">?</div>
+          <span className="text-slate-600">?</span>
         )}
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-white" title={entry.name}>
-            {entry.name}
-          </p>
-          <p className="text-[11px] font-bold" style={{ color }}>
-            {getMinerLevelRarityName(entry.matchedLevel)}
-          </p>
-        </div>
       </div>
-
-      <div className="mt-2 space-y-0.5 text-xs">
-        <div className="flex items-center justify-between">
-          <span className="text-slate-400">Poder</span>
-          <span className="text-slate-200">{formatPower(entry.power)}</span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-slate-400">Bônus</span>
-          <span className="text-slate-200">{entry.bonus}%</span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-slate-400">Quantidade</span>
-          <span className="text-slate-200">x{entry.quantity}</span>
-        </div>
-      </div>
+      <p className="truncate px-2 pt-1.5 text-center text-xs font-semibold text-white" title={entry.name}>
+        {entry.name}
+      </p>
+      <p className="px-2 pb-2 pt-0.5 text-center text-[11px] text-slate-400">
+        {formatPower(entry.power)} | {entry.bonus}%
+      </p>
     </div>
   )
 }
 
-export default function RoomInventoryPanel() {
-  const [minersData, setMinersData] = useState<MinersData | null>(null)
-  const [pasteText, setPasteText] = useState('')
-  const [entries, setEntries] = useState<EnrichedEntry[]>([])
-  const [unrecognizedCount, setUnrecognizedCount] = useState<number | null>(null)
-
+export default function RoomInventoryPanel({ entries }: { entries: EnrichedMinerEntry[] }) {
   const [searchText, setSearchText] = useState('')
   const [sortOption, setSortOption] = useState<SortOption>('poder_desc')
   const [widthFilter, setWidthFilter] = useState<Set<number>>(() => new Set([1, 2]))
   const [activeTab, setActiveTab] = useState<'racks' | 'miners'>('miners')
   const [page, setPage] = useState(0)
-
-  // Catálogo estático (public/data/miners.json) -- só resolve imagem/poder/
-  // bônus/células de cada minerador citado no texto colado, não é dado do
-  // jogador (mesma exceção já documentada em RoomRacksLayer.tsx).
-  useEffect(() => {
-    let cancelled = false
-    fetch('/data/miners.json')
-      .then((res) => {
-        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
-        return res.json() as Promise<MinersData>
-      })
-      .then((json) => {
-        if (!cancelled) setMinersData(json)
-      })
-      .catch(() => {
-        if (!cancelled) setMinersData({ generatedAt: '', total: 0, totalMerges: 0, miners: [] })
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  function handleImport() {
-    if (!minersData) return
-
-    const parsed = parseMinersInventory(pasteText)
-    const minersByNormalizedName = buildMinersByNormalizedNameMap(minersData.miners)
-
-    const next: EnrichedEntry[] = []
-    let unrecognized = 0
-
-    parsed.forEach((entry, index) => {
-      const resolved = resolveMinerLevel(entry.name, entry.powerValue, minersByNormalizedName)
-      if (!resolved) {
-        unrecognized++
-        return
-      }
-      const miner: Miner = resolved.miner
-      next.push({
-        key: `${miner.id}-${resolved.matchedLevel}-${index}`,
-        name: miner.name,
-        power: getMinerPowerAtLevel(miner, resolved.matchedLevel),
-        bonus: getMinerBonusAtLevel(miner, resolved.matchedLevel),
-        cells: miner.cells,
-        image: miner.image,
-        quantity: entry.quantity,
-        matchedLevel: resolved.matchedLevel,
-      })
-    })
-
-    setEntries(next)
-    setUnrecognizedCount(unrecognized)
-    setPage(0)
-  }
 
   function toggleWidth(width: number) {
     setWidthFilter((prev) => {
@@ -192,136 +134,118 @@ export default function RoomInventoryPanel() {
   const clampedPage = Math.min(page, pageCount - 1)
   const pageEntries = filteredSorted.slice(clampedPage * PAGE_SIZE, clampedPage * PAGE_SIZE + PAGE_SIZE)
 
+  if (entries.length === 0) return null
+
   return (
     <Card title="Inventário Importado" className="mt-4">
-      <div>
-        <label className="mb-1 block text-xs text-slate-400">
-          Colar inventário de mineradores (mesmo texto usado em Merges)
-        </label>
-        <textarea
-          value={pasteText}
-          onChange={(e) => setPasteText(e.target.value)}
-          placeholder="Cole aqui o texto copiado de 'Meus Mineradores'"
-          rows={6}
-          className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-xs text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+      {/* Barra de navegação numa linha só (Prompt 58, correção 2) --
+          flex-wrap só entra em telas estreitas, alvo é uma linha em
+          desktop. */}
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/60 p-2">
+        <div className="relative min-w-[140px] flex-1">
+          <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2">
+            <SearchIcon />
+          </span>
+          <input
+            type="text"
+            value={searchText}
+            onChange={(e) => {
+              setSearchText(e.target.value)
+              setPage(0)
+            }}
+            placeholder="Buscar por nome..."
+            className="w-full rounded-md border border-slate-700 bg-slate-900 py-1.5 pl-8 pr-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+
+        <SortDropdown
+          options={SORT_OPTIONS}
+          value={sortOption}
+          onChange={(v) => {
+            setSortOption(v)
+            setPage(0)
+          }}
         />
-        <div className="mt-2 flex items-center gap-3">
+
+        <div className="flex shrink-0 gap-1.5">
+          {[1, 2].map((width) => (
+            <button
+              key={width}
+              type="button"
+              onClick={() => toggleWidth(width)}
+              className={`flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                widthFilter.has(width)
+                  ? 'bg-slate-700 text-white'
+                  : 'bg-slate-900 text-slate-500 hover:bg-slate-700/60'
+              }`}
+            >
+              <span
+                className={`h-2.5 w-2.5 rounded-full ${
+                  widthFilter.has(width) ? 'bg-indigo-400' : 'bg-slate-600'
+                }`}
+              />
+              {width} {width === 1 ? 'Célula' : 'Células'}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex shrink-0 gap-1.5">
+          {(['racks', 'miners'] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              title={tab === 'racks' ? 'Ainda não implementado' : undefined}
+              className={`rounded-md px-3 py-1.5 text-xs font-bold uppercase tracking-wide transition-colors ${
+                activeTab === tab
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-slate-900 text-slate-400 hover:bg-slate-700'
+              }`}
+            >
+              {tab === 'racks' ? 'Racks' : 'Miners'}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1">
           <button
             type="button"
-            onClick={handleImport}
-            className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+            disabled={clampedPage === 0}
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            title={`Página ${clampedPage + 1} de ${pageCount}`}
+            className="flex h-7 w-7 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-sm text-slate-200 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Importar Inventário
+            ←
           </button>
-          {unrecognizedCount !== null && (
-            <p className="text-xs text-slate-400">
-              {entries.length} reconhecidos, {unrecognizedCount} não reconhecidos
-            </p>
-          )}
+          <button
+            type="button"
+            disabled={clampedPage >= pageCount - 1}
+            onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+            title={`Página ${clampedPage + 1} de ${pageCount}`}
+            className="flex h-7 w-7 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-sm text-slate-200 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            →
+          </button>
         </div>
       </div>
 
-      {entries.length > 0 && (
-        <div className="mt-5 space-y-3 border-t border-slate-800 pt-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <input
-              type="text"
-              value={searchText}
-              onChange={(e) => {
-                setSearchText(e.target.value)
-                setPage(0)
-              }}
-              placeholder="Buscar por nome"
-              className="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            <SortDropdown
-              options={SORT_OPTIONS}
-              value={sortOption}
-              onChange={(v) => {
-                setSortOption(v)
-                setPage(0)
-              }}
-            />
+      <div className="mt-4">
+        {activeTab === 'racks' ? (
+          <p className="rounded-md border border-slate-800 bg-slate-950/40 p-4 text-sm text-slate-500">
+            Aba Racks ainda não implementada.
+          </p>
+        ) : pageEntries.length === 0 ? (
+          <p className="rounded-md border border-slate-800 bg-slate-950/40 p-4 text-sm text-slate-500">
+            Nenhum minerador encontrado com esses filtros.
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+            {pageEntries.map((entry) => (
+              <MinerCard key={entry.key} entry={entry} />
+            ))}
           </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex gap-1.5">
-              {[1, 2].map((width) => (
-                <button
-                  key={width}
-                  type="button"
-                  onClick={() => toggleWidth(width)}
-                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                    widthFilter.has(width)
-                      ? 'bg-slate-600 text-white'
-                      : 'bg-slate-800/60 text-slate-400 hover:bg-slate-700'
-                  }`}
-                >
-                  {width} {width === 1 ? 'Célula' : 'Células'}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex gap-1.5">
-              {(['racks', 'miners'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setActiveTab(tab)}
-                  title={tab === 'racks' ? 'Ainda não implementado' : undefined}
-                  className={`rounded-md px-3 py-1.5 text-xs font-bold uppercase tracking-wide transition-colors ${
-                    activeTab === tab
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                  }`}
-                >
-                  {tab === 'racks' ? 'Racks' : 'Miners'}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {activeTab === 'racks' ? (
-            <p className="rounded-md border border-slate-800 bg-slate-950/40 p-4 text-sm text-slate-500">
-              Aba Racks ainda não implementada.
-            </p>
-          ) : pageEntries.length === 0 ? (
-            <p className="rounded-md border border-slate-800 bg-slate-950/40 p-4 text-sm text-slate-500">
-              Nenhum minerador encontrado com esses filtros.
-            </p>
-          ) : (
-            <>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {pageEntries.map((entry) => (
-                  <MinerCard key={entry.key} entry={entry} />
-                ))}
-              </div>
-
-              <div className="flex items-center justify-center gap-3 pt-1">
-                <button
-                  type="button"
-                  disabled={clampedPage === 0}
-                  onClick={() => setPage((p) => Math.max(0, p - 1))}
-                  className="rounded-md border border-slate-700 bg-slate-800 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  ←
-                </button>
-                <span className="text-xs text-slate-400">
-                  Página {clampedPage + 1} de {pageCount}
-                </span>
-                <button
-                  type="button"
-                  disabled={clampedPage >= pageCount - 1}
-                  onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-                  className="rounded-md border border-slate-700 bg-slate-800 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  →
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      )}
+        )}
+      </div>
     </Card>
   )
 }
