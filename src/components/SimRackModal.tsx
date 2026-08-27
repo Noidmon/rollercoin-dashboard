@@ -49,7 +49,20 @@ function SwapPicker({ cellsAllowed, inventory, remainingByEntryKey, onPick, onCl
   })
 
   return (
-    <div className="absolute inset-0 z-10 flex flex-col rounded-lg bg-slate-950/95 p-3">
+    // BUG real encontrado e corrigido (Prompt 71): antes era `absolute
+    // inset-0` (top+right+bottom+left todos 0) dentro do wrapper `relative`
+    // da PRÓPRIA linha -- isso força a altura do overlay a ser EXATAMENTE
+    // a altura da linha (~50-60px), sem sobra nenhuma pro flex-1 da lista
+    // de resultados crescer (um flex-item com flex-basis:0 dentro de um
+    // container SEM altura extra disponível renderiza a 0px). A busca
+    // funcionava (o filtro/estado sempre esteve certo) e os botões de
+    // resultado existiam no DOM -- só ficavam com altura computada 0,
+    // cortados pelo overflow-y-auto, então invisíveis mesmo com matches.
+    // Corrigido soltando o `bottom` (só top/left/right) e dando um
+    // max-height explícito à lista -- agora o overlay cresce pra baixo
+    // conforme o conteúdo, cobrindo as linhas seguintes (esperado, mesmo
+    // padrão de um dropdown normal -- tem fundo sólido e z-index acima).
+    <div className="absolute left-0 right-0 top-0 z-10 flex flex-col rounded-lg border border-slate-700 bg-slate-950 p-3 shadow-xl">
       <div className="mb-2 flex items-center justify-between gap-2">
         <input
           autoFocus
@@ -67,7 +80,7 @@ function SwapPicker({ cellsAllowed, inventory, remainingByEntryKey, onPick, onCl
           ✕
         </button>
       </div>
-      <div className="flex-1 space-y-1 overflow-y-auto">
+      <div className="max-h-64 space-y-1 overflow-y-auto">
         {options.length === 0 ? (
           <p className="p-2 text-xs text-slate-500">Nenhum minerador disponível no inventário pra esse slot.</p>
         ) : (
