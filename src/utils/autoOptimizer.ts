@@ -212,6 +212,10 @@ export interface AutoOptimizerInput {
   // enquanto ainda não carregou (nesse caso o bônus de set fica de fora do
   // cálculo até carregar, sem quebrar nada -- ver sumRoomBonusPercentWithSets).
   setsData: MinerSetsData | null
+  // playerData.games (profile/user-power-data) -- entra igual em QUALQUER
+  // arranjo da sala, mas precisa ir junto pro total "Sem Temporário" bater
+  // com a fórmula oficial current_power-temp do Dashboard (Prompt 67).
+  gamesPower: number
 }
 
 // Tracker incremental do MESMO formato de calculateRoomPower (gamesPower=0,
@@ -561,9 +565,25 @@ function buildFinalMiners(placements: OptimizerPlacement[]): RoomMinerInstance[]
   }))
 }
 
-function totalPowerNoTemp(miners: RoomMinerInstance[], racks: Rack[], setsData: MinerSetsData | null): number {
+// gamesPower entra igual pra todo mundo em qualquer arranjo da sala (não
+// depende de miner/rack nenhum) -- passado pelo valor REAL da conta
+// (playerData.games) pra bater com a fórmula oficial do jogo
+// (current_power - temp = games + minersTotal + racksTotal +
+// collectionBonus, mesma estrutura de calculateRoomPower). Bug real
+// corrigido (Prompt 67): antes gamesPower vinha hardcoded 0 aqui, fazendo
+// o "Sem Temporário" do Auto-Otimizador ficar sistematicamente MENOR que
+// o do Dashboard (que usa current_power-temp, com games incluído) mesmo
+// com dado 100% sincronizado -- um gap real de fórmula, independente de
+// qualquer atraso de cache da API (ver investigação em minerSets.ts/
+// calculatePower.ts sobre o outro fator, o atraso de user-power-data).
+function totalPowerNoTemp(
+  miners: RoomMinerInstance[],
+  racks: Rack[],
+  setsData: MinerSetsData | null,
+  gamesPower: number,
+): number {
   const bonusPercent = sumRoomBonusPercentWithSets(miners, setsData)
-  return calculateRoomPower(miners, racks, 0, bonusPercent, 0).total
+  return calculateRoomPower(miners, racks, gamesPower, bonusPercent, 0).total
 }
 
 // Versão com o detalhamento de bônus (% e valor) -- usada só nos pontos
@@ -573,9 +593,10 @@ function roomPowerBreakdownNoTemp(
   miners: RoomMinerInstance[],
   racks: Rack[],
   setsData: MinerSetsData | null,
+  gamesPower: number,
 ): { total: number; bonusPercent: number; bonusValue: number } {
   const bonusPercent = sumRoomBonusPercentWithSets(miners, setsData)
-  const breakdown = calculateRoomPower(miners, racks, 0, bonusPercent, 0)
+  const breakdown = calculateRoomPower(miners, racks, gamesPower, bonusPercent, 0)
   return { total: breakdown.total, bonusPercent, bonusValue: breakdown.collectionBonus }
 }
 
@@ -662,11 +683,12 @@ function runIterativeImprovement(
   ceilingGhs: number,
   priority: OptimizerPriority,
   setsData: MinerSetsData | null,
+  gamesPower: number,
 ): IterativeImprovementResult {
   const startedAt = Date.now()
   let current = [...initialPlacements]
   let remaining = [...initialRemainingInventory]
-  let currentTotal = totalPowerNoTemp(buildFinalMiners(current), racks, setsData)
+  let currentTotal = totalPowerNoTemp(buildFinalMiners(current), racks, setsData, gamesPower)
 
   let iterations = 0
   let converged = false
@@ -691,7 +713,7 @@ function runIterativeImprovement(
         if (cand.cells === 2 && row.freeXs.length !== 2) continue
 
         const trial = [...current, placementFromCandidate(cand, row, 0)]
-        const total = totalPowerNoTemp(buildFinalMiners(trial), racks, setsData)
+        const total = totalPowerNoTemp(buildFinalMiners(trial), racks, setsData, gamesPower)
         if (total > ceilingGhs || total <= currentTotal) continue
         if (!best || total > best.total) best = { kind: 'fill', row, candidate: cand, total }
       }
@@ -709,7 +731,7 @@ function runIterativeImprovement(
         if (priority === 'poder_bruto' && cand.power <= oldP.power) continue
 
         const trial = [...current.filter((p) => p !== oldP), placementFromInventoryCandidateAt(cand, oldP)]
-        const total = totalPowerNoTemp(buildFinalMiners(trial), racks, setsData)
+        const total = totalPowerNoTemp(buildFinalMiners(trial), racks, setsData, gamesPower)
         if (total > ceilingGhs || total <= currentTotal) continue
         if (!best || total > best.total) best = { kind: 'swap', oldP, candidate: cand, total }
       }
@@ -734,9 +756,9 @@ function runIterativeImprovement(
 }
 
 export function runAutoOptimizer(input: AutoOptimizerInput): AutoOptimizerResult {
-  const { mode, priority, ceilingGhs, installedMiners, racks, inventory, setsData } = input
+  const { mode, priority, ceilingGhs, installedMiners, racks, inventory, setsData, gamesPower } = input
 
-  const before = roomPowerBreakdownNoTemp(installedMiners, racks, setsData)
+  const before = roomPowerBreakdownNoTemp(installedMiners, racks, setsData, gamesPower)
   const installedWithPlacement = installedMiners.filter(hasValidPlacement)
 
   // Base comum aos dois modos: TODO instalado começa na própria posição
@@ -809,6 +831,7 @@ export function runAutoOptimizer(input: AutoOptimizerInput): AutoOptimizerResult
       ceilingGhs,
       priority,
       setsData,
+      gamesPower,
     )
     finalPlacements = improvement.placements
     iterativeSearch = {
@@ -819,7 +842,7 @@ export function runAutoOptimizer(input: AutoOptimizerInput): AutoOptimizerResult
   }
 
   const finalMiners = buildFinalMiners(finalPlacements)
-  const after = roomPowerBreakdownNoTemp(finalMiners, racks, setsData)
+  const after = roomPowerBreakdownNoTemp(finalMiners, racks, setsData, gamesPower)
 
   const changedPlacements = finalPlacements.filter((p) => !p.unchanged)
 

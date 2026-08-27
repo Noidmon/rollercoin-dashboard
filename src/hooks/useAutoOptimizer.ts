@@ -93,6 +93,7 @@ export function useAutoOptimizer(playerData: PlayerData, inventory: EnrichedMine
       racks: playerData.roomConfig.racks,
       inventory,
       setsData,
+      gamesPower: playerData.games,
     })
     setResult(optimizerResult)
     setActiveTab('simulacao')

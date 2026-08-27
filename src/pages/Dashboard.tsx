@@ -52,6 +52,11 @@ export default function Dashboard() {
   const nextLeagueImageUrl = proxyImageUrl(
     getNextLeagueImageUrl(playerData.currentLeagueImageUrl),
   )
+  // Vem direto de user-power-data (current_power/temp oficiais da API) --
+  // pode divergir por alguns minutos do "Sem Temporário" recalculado
+  // localmente pelo Auto-Otimizador no Simulador (esse usa room-config, que
+  // reflete a sala AO VIVO) logo após uma troca real no jogo. Não é bug,
+  // ver comentário em getPlayerPower (services/api.ts).
   const powerWithoutTemp = playerData.current_power - playerData.temp
 
   function priceFor(symbol: string): number | null {

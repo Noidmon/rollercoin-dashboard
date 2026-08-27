@@ -66,6 +66,22 @@ export async function getRoomConfig(avatarId: string): Promise<RoomConfig> {
   return result.data
 }
 
+// INVESTIGAÇÃO (Prompt 67): powerData (profile/user-power-data) e
+// roomConfig (game/room-config) são buscados em paralelo aqui, no MESMO
+// instante -- mas são DOIS sistemas de backend diferentes da RollerCoin,
+// sem garantia de consistência entre si. room-config reflete o estado
+// LIVE da sala (confirmado: refletiu uma troca real segundos depois de
+// aplicada no jogo); user-power-data (current_power/temp/bonus_percent,
+// usado pelo Dashboard e pelo painel esquerdo do Simulador) parece ser
+// um snapshot com cache próprio do lado do RollerCoin, que pode ficar
+// minutos atrasado em relação a uma mudança recente na sala -- SEM campo
+// de timestamp na resposta que confirme o atraso diretamente, mas
+// consistente com o comportamento já documentado na referência ROOMS e
+// com a diferença observada na prática (Auto-Otimizador, que recalcula
+// localmente a partir do room-config AO VIVO via
+// roomPowerBreakdownNoTemp, mostrando um total diferente do Dashboard
+// logo após uma troca real). Não é bug nosso -- é característica do jogo,
+// não corrigível do lado do cliente (só esperar o RollerCoin recalcular).
 export async function getPlayerPower(nickname: string) {
   const profile = await getPublicProfile(nickname)
   const [powerData, roomConfig] = await Promise.all([

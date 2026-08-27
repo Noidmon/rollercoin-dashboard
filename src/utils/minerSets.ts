@@ -154,3 +154,28 @@ export function getUnmodeledPowerSets(
 
   return result
 }
+
+// INVESTIGAÇÃO (segunda rodada): catálogo atual (public/data/miner-sets.json,
+// 17 sets) tem 6 sets "power_ghs" -- não é caso hipotético, existem de
+// verdade: Beer Pack Set (2/3 membros -> +5.000.000/+8.000.000 Gh/s),
+// Bronze Farm Set (2/4 -> +1.500.000/+2.500.000), Globes Set (2/4 ->
+// +10.000.000/+25.000.000), Power-Up Set (2/3 -> +5.000.000/+10.000.000),
+// Silver Farm Set (2/4 -> +2.000.000/+3.000.000), Super Bros Set (2/3 ->
+// +7.500.000/+15.000.000). Todos os membros desses 6 sets são nível 1
+// (base, sem merge) -- diferente do Lost Treasure Set (bonus_percent, que
+// exigia nível 5/6).
+//
+// NENHUMA conta real disponível tem um desses sets ativo (NoID não possui
+// nenhum dos mineradores membros) -- então a fórmula abaixo (mesma lógica
+// de contagem de membros distintos + cumulativo por tier já confirmada pra
+// bonus_percent, só que somando Gh/s FIXO em vez de %) é uma EXTRAPOLAÇÃO
+// não validada contra dado real, não uma fórmula confirmada.
+//
+// Por isso NÃO é chamada de lugar nenhum do app (Auto-Otimizador, Merges,
+// Dashboard) -- fica disponível só como função separada, pra quem quiser
+// testar manualmente ou plugar quando surgir uma conta real com esse tipo
+// de set pra validar. Ver getUnmodeledPowerSets() acima pro detalhamento
+// por set (usado por esta função).
+export function computeUnvalidatedSetPowerGhsBonus(miners: RoomMinerLike[], setsData: MinerSetsData): number {
+  return getUnmodeledPowerSets(miners, setsData).reduce((sum, s) => sum + s.achievedPowerGhs, 0)
+}
