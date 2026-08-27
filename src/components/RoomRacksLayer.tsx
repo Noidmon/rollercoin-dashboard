@@ -127,9 +127,15 @@ function RackImage({
 interface RoomRacksLayerProps {
   placements: RackPlacement[]
   miners: Miner[]
+  // Só definido na aba "Simulação" (Prompt 69) -- clicar numa rack ou num
+  // minerador dentro dela abre o modal de edição focado ali. undefined na
+  // aba "Atual" (view somente-leitura, sem handler nenhum) -- mais simples
+  // que desabilitar cliques explicitamente, e o cursor/hover também some
+  // sozinho sem essa prop.
+  onRackClick?: (rackInstanceId: string, focusedMinerInstanceId: string | null) => void
 }
 
-export default function RoomRacksLayer({ placements, miners }: RoomRacksLayerProps) {
+export default function RoomRacksLayer({ placements, miners, onRackClick }: RoomRacksLayerProps) {
   // Catálogos estáticos (public/data/racks.json e public/data/miners.json,
   // já sincronizados em sessões anteriores) -- só resolvem a IMAGEM de cada
   // tipo de rack/minerador, não são dado do jogador. Buscar isso aqui não
@@ -226,7 +232,7 @@ export default function RoomRacksLayer({ placements, miners }: RoomRacksLayerPro
             // comportamento do jogo real, miners "vazam" pra cima da
             // prateleira). Cada imagem de RACK já recorta a si mesma (ver
             // RackImage acima), então não precisa do slot cortar nada.
-            className="absolute"
+            className={`absolute${onRackClick ? ' cursor-pointer' : ''}`}
             style={{
               left: box.left,
               top: box.top,
@@ -238,6 +244,7 @@ export default function RoomRacksLayer({ placements, miners }: RoomRacksLayerPro
               zIndex: Math.round(placement.pixelPosition.top),
             }}
             title={placement.name}
+            onClick={onRackClick ? () => onRackClick(placement.instanceId, null) : undefined}
           >
             <RackImage rackId={placement.rackId} fallbackSrc={rackImage} alt={placement.name} />
 
@@ -283,8 +290,21 @@ export default function RoomRacksLayer({ placements, miners }: RoomRacksLayerPro
                     // como a função real (`eo`, branch de fallback GIF) faz.
                     // Fixar largura+altura como antes achatava/esticava
                     // miners com proporções diferentes da suposta 116x50.
-                    className="pointer-events-none absolute max-w-none select-none [image-rendering:pixelated]"
+                    //
+                    // pointer-events fica ativo só quando editável (Prompt
+                    // 69) -- clicar no MINERADOR abre o modal já focado nele
+                    // (stopPropagation pra não também disparar o onClick da
+                    // rack inteira, que abriria sem foco nenhum).
+                    className={`absolute max-w-none select-none [image-rendering:pixelated]${onRackClick ? ' cursor-pointer' : ' pointer-events-none'}`}
                     style={{ left: box.left, top: box.top, width: box.width, transform: 'translateY(-100%)' }}
+                    onClick={
+                      onRackClick
+                        ? (e) => {
+                            e.stopPropagation()
+                            onRackClick(placement.instanceId, miner._id ?? null)
+                          }
+                        : undefined
+                    }
                   />
                   {badges.map((badge) => (
                     <img

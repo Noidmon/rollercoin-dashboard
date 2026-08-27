@@ -1,8 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { getLeagueInfo, LEAGUES } from '../data/leagues'
 import { subtractSmallestDisplayedUnit } from '../utils/formatPower'
 import { runAutoOptimizer, type AutoOptimizerResult, type OptimizerMode, type OptimizerPriority } from '../utils/autoOptimizer'
 import { useMinerSetsData } from './useMinerSetsData'
+import {
+  cloneSimRoomFromReal,
+  dismountRackInSim,
+  dismountRackMinersInSim,
+  removeMinerFromSim,
+  swapMinerInSim,
+  type SimRoomState,
+} from '../utils/simRoom'
 import type { EnrichedMinerEntry } from './useMinersInventoryImport'
 import type { PlayerData } from '../context/PlayerContext'
 
@@ -46,6 +54,18 @@ export function buildLeagueCeilingOptions(formatPower: (v: number) => string): L
 // está instalado), não por indicação explícita do pedido original.
 export type RoomTab = 'atual' | 'simulacao'
 
+// Prompt 69: promove a sala simulada de "byproduto efêmero do último run
+// do Auto-Otimizador" pra estado PRÓPRIO, editável manualmente (modal de
+// rack) e independente de rodar o otimizador -- ver investigação no topo
+// deste prompt. simRoom é o estado que a aba "Simulação" renderiza e que
+// o Auto-Otimizador LÊ como ponto de partida (em vez de sempre reler
+// playerData.roomConfig puro) e ESCREVE de volta depois de rodar --
+// editar manualmente e depois rodar o otimizador agora compõe (o
+// otimizador parte do que já foi editado), pedido explícito do usuário.
+// Nenhuma invariante do algoritmo depende de simMiners/simRacks serem
+// EXATAMENTE playerData.roomConfig -- runAutoOptimizer só lê arrays de
+// miners/racks no mesmo formato, então um subconjunto (racks desmontadas)
+// ou uma lista com miners trocados funciona sem mudança nenhuma no motor.
 export function useAutoOptimizer(playerData: PlayerData, inventory: EnrichedMinerEntry[]) {
   const [priority, setPriority] = useState<OptimizerPriority>('padrao')
   const [mode, setMode] = useState<OptimizerMode>('preservar_sala')
@@ -54,9 +74,10 @@ export function useAutoOptimizer(playerData: PlayerData, inventory: EnrichedMine
     return LEAGUES.findIndex((l) => l.name === currentLeague.name)
   })
   const [result, setResult] = useState<AutoOptimizerResult | null>(null)
-  // Aba "Atual"/"Simulação" acima da sala -- muda pra "Simulação"
-  // automaticamente depois de rodar Otimizar (Prompt 65), mas o usuário
-  // pode voltar pra "Atual" manualmente a qualquer momento.
+  // Aba "Atual"/"Simulação" acima da sala -- as DUAS sempre clicáveis desde
+  // o início (Prompt 69: antes "Simulação" só liberava depois do 1º run do
+  // otimizador; agora a edição manual não depende disso), mas continua
+  // trocando pra "Simulação" automaticamente depois de rodar Otimizar.
   const [activeTab, setActiveTab] = useState<RoomTab>('atual')
 
   // Catálogo de sets temáticos (bônus de coleção por conjunto, ex: "The
@@ -65,6 +86,39 @@ export function useAutoOptimizer(playerData: PlayerData, inventory: EnrichedMine
   // compartilhado com o Dashboard (Prompt 68) -- ver useMinerSetsData.
   const setsData = useMinerSetsData()
 
+  const [simRoom, setSimRoom] = useState<SimRoomState>(() => cloneSimRoomFromReal(playerData))
+
+  // Conta nova carregada (nickname diferente buscado) -- descarta qualquer
+  // edição/resultado da conta anterior. Sem isso, trocar de nickname
+  // deixaria a sala simulada "vazando" dados de outra conta.
+  useEffect(() => {
+    setSimRoom(cloneSimRoomFromReal(playerData))
+    setResult(null)
+    setActiveTab('atual')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playerData.avatar])
+
+  function resetSimulation() {
+    setSimRoom(cloneSimRoomFromReal(playerData))
+    setResult(null)
+  }
+
+  function swapMiner(rackInstanceId: string, x: 0 | 1, y: number, entry: EnrichedMinerEntry) {
+    setSimRoom((prev) => swapMinerInSim(prev, rackInstanceId, x, y, entry, setsData))
+  }
+
+  function removeMiner(rackInstanceId: string, x: 0 | 1, y: number) {
+    setSimRoom((prev) => removeMinerFromSim(prev, rackInstanceId, x, y))
+  }
+
+  function dismountRackMiners(rackInstanceId: string) {
+    setSimRoom((prev) => dismountRackMinersInSim(prev, rackInstanceId))
+  }
+
+  function dismountRack(rackInstanceId: string) {
+    setSimRoom((prev) => dismountRackInSim(prev, rackInstanceId))
+  }
+
   function runOptimizer() {
     const ceilingGhs = leagueCeilingGhs(leagueIndex)
 
@@ -72,12 +126,16 @@ export function useAutoOptimizer(playerData: PlayerData, inventory: EnrichedMine
       mode,
       priority,
       ceilingGhs,
-      installedMiners: playerData.roomConfig.miners,
-      racks: playerData.roomConfig.racks,
+      installedMiners: simRoom.miners,
+      racks: simRoom.racks,
       inventory,
       setsData,
     })
     setResult(optimizerResult)
+    // O otimizador só reposiciona MINERS -- racks nunca mudam por conta
+    // dele, então simRoom.racks fica como estava (racks desmontadas
+    // manualmente continuam fora, o otimizador nunca as recria).
+    setSimRoom((prev) => ({ ...prev, miners: optimizerResult.simulatedMiners }))
     setActiveTab('simulacao')
   }
 
@@ -92,5 +150,12 @@ export function useAutoOptimizer(playerData: PlayerData, inventory: EnrichedMine
     runOptimizer,
     activeTab,
     setActiveTab,
+    simRoom,
+    setsData,
+    resetSimulation,
+    swapMiner,
+    removeMiner,
+    dismountRackMiners,
+    dismountRack,
   }
 }

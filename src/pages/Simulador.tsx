@@ -12,11 +12,14 @@ import AutoOptimizerSummary from '../components/AutoOptimizerSummary'
 import AutoOptimizerResults from '../components/AutoOptimizerResults'
 import ScaledRoomCanvas from '../components/ScaledRoomCanvas'
 import LeagueBadge from '../components/LeagueBadge'
+import SimRackModal from '../components/SimRackModal'
 import { roomConfigToRackPlacements } from '../utils/roomLayout'
-import { useMinersInventoryImport } from '../hooks/useMinersInventoryImport'
+import { computeRemainingInventory } from '../utils/simRoom'
+import { useMinersInventoryImport, type EnrichedMinerEntry } from '../hooks/useMinersInventoryImport'
 import { useAutoOptimizer, type RoomTab } from '../hooks/useAutoOptimizer'
 import type { PlayerData } from '../context/PlayerContext'
 import type { AutoOptimizerResult, OptimizerMode, OptimizerPriority } from '../utils/autoOptimizer'
+import type { SimRoomState } from '../utils/simRoom'
 
 interface OptimizerControlsProps {
   priority: OptimizerPriority
@@ -115,17 +118,17 @@ function RoomStatsPanel({
 }
 
 // Abas "Atual"/"Simulação" acima da sala visual -- referência real
-// (SmartRoom, Prompt 65). "Simulação" só fica clicável depois de rodar o
-// Auto-Otimizador ao menos uma vez (sem resultado ainda, não tem o que
-// mostrar).
+// (SmartRoom, Prompt 65). Prompt 69: as DUAS sempre clicáveis desde o
+// início -- a sala simulada agora existe desde o carregamento da página
+// (clone do room-config real, editável manualmente mesmo sem rodar o
+// Auto-Otimizador), não é mais um byproduct que só existe depois de um
+// resultado.
 function RoomTabs({
   activeTab,
   onTabChange,
-  hasResult,
 }: {
   activeTab: RoomTab
   onTabChange: (tab: RoomTab) => void
-  hasResult: boolean
 }) {
   return (
     <div className="flex gap-2">
@@ -142,15 +145,11 @@ function RoomTabs({
       </button>
       <button
         type="button"
-        onClick={() => hasResult && onTabChange('simulacao')}
-        disabled={!hasResult}
-        title={hasResult ? undefined : 'Rode o Auto-Otimizador primeiro'}
+        onClick={() => onTabChange('simulacao')}
         className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-          !hasResult
-            ? 'cursor-not-allowed bg-slate-800/60 text-slate-600'
-            : activeTab === 'simulacao'
-              ? 'bg-indigo-600 text-white'
-              : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+          activeTab === 'simulacao'
+            ? 'bg-indigo-600 text-white'
+            : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
         }`}
       >
         ✨ Simulação
@@ -159,12 +158,17 @@ function RoomTabs({
   )
 }
 
+interface OpenRack {
+  rackInstanceId: string
+  focusedMinerInstanceId: string | null
+}
+
 // Visual real da sala: fundo (RoomBackground) + racks/mineradores reais da
 // conta (RoomRacksLayer) sobrepostos no mesmo container, escalado pra
 // largura real disponível (ScaledRoomCanvas). Botões 1-4 na lateral trocam
-// qual sala é exibida -- só uma por vez. Aba "Simulação" troca só os
-// MINERS renderizados (result.simulatedMiners) -- os racks nunca mudam de
-// posição, só quem está posicionado neles.
+// qual sala é exibida -- só uma por vez. Aba "Simulação" agora renderiza
+// simRoom (racks E miners, Prompt 69) -- pode diferir da "Atual" tanto em
+// QUEM está montado quanto em QUAIS racks existem (Desmontar Rack).
 function RoomVisualization({
   playerData,
   pasteText,
@@ -176,6 +180,13 @@ function RoomVisualization({
   result,
   activeTab,
   onTabChange,
+  simRoom,
+  inventory,
+  onSwapMiner,
+  onRemoveMiner,
+  onDismountRackMiners,
+  onDismountRack,
+  onResetSimulation,
 }: {
   playerData: PlayerData
   pasteText: string
@@ -187,11 +198,19 @@ function RoomVisualization({
   result: AutoOptimizerResult | null
   activeTab: RoomTab
   onTabChange: (tab: RoomTab) => void
+  simRoom: SimRoomState
+  inventory: EnrichedMinerEntry[]
+  onSwapMiner: (rackInstanceId: string, x: 0 | 1, y: number, entry: EnrichedMinerEntry) => void
+  onRemoveMiner: (rackInstanceId: string, x: 0 | 1, y: number) => void
+  onDismountRackMiners: (rackInstanceId: string) => void
+  onDismountRack: (rackInstanceId: string) => void
+  onResetSimulation: () => void
 }) {
-  const placements = roomConfigToRackPlacements(playerData.roomConfig)
-  const unlockedLevels = new Set(placements.map((p) => p.roomLevel))
+  const realPlacements = roomConfigToRackPlacements(playerData.roomConfig)
+  const unlockedLevels = new Set(realPlacements.map((p) => p.roomLevel))
 
   const [selectedLevel, setSelectedLevel] = useState(() => Math.min(...unlockedLevels, 0))
+  const [openRack, setOpenRack] = useState<OpenRack | null>(null)
 
   if (unlockedLevels.size === 0) {
     return (
@@ -201,9 +220,42 @@ function RoomVisualization({
     )
   }
 
-  const racksInSelectedLevel = placements.filter((p) => p.roomLevel === selectedLevel)
-  const showingSimulation = activeTab === 'simulacao' && result !== null
-  const displayMiners = showingSimulation ? result!.simulatedMiners : playerData.roomConfig.miners
+  const showingSimulation = activeTab === 'simulacao'
+  // Aba "Atual" sempre mostra o room-config REAL, intocado -- aba
+  // "Simulação" mostra simRoom (racks + miners), que já começa como um
+  // clone exato do real e diverge só depois de editar/otimizar.
+  const simPlacements = roomConfigToRackPlacements({ racks: simRoom.racks })
+  const racksInSelectedLevel = (showingSimulation ? simPlacements : realPlacements).filter(
+    (p) => p.roomLevel === selectedLevel,
+  )
+  const displayMiners = showingSimulation ? simRoom.miners : playerData.roomConfig.miners
+
+  const remainingByEntryKey = computeRemainingInventory(simRoom.miners, inventory)
+
+  function handleRackClick(rackInstanceId: string, focusedMinerInstanceId: string | null) {
+    setOpenRack({ rackInstanceId, focusedMinerInstanceId })
+  }
+
+  // Se a rack aberta no modal for desmontada (some do layout), navega pra
+  // a próxima disponível na mesma sala em vez de deixar o modal "preso"
+  // apontando pra uma rack que não existe mais -- fecha se não sobrar
+  // nenhuma.
+  function handleDismountRack(rackInstanceId: string) {
+    onDismountRack(rackInstanceId)
+    setOpenRack((prev) => {
+      if (!prev || prev.rackInstanceId !== rackInstanceId) return prev
+      const remaining = racksInSelectedLevel.filter((r) => r.instanceId !== rackInstanceId)
+      return remaining.length > 0 ? { rackInstanceId: remaining[0].instanceId, focusedMinerInstanceId: null } : null
+    })
+  }
+
+  function handleResetSimulation() {
+    if (!window.confirm('Resetar a simulação? Isso descarta TODAS as edições manuais e o resultado do Auto-Otimizador, voltando ao estado real da conta.')) {
+      return
+    }
+    setOpenRack(null)
+    onResetSimulation()
+  }
 
   return (
     <Card title="Sala">
@@ -218,11 +270,21 @@ function RoomVisualization({
         />
 
         <div className="flex min-w-0 flex-1 flex-col gap-3">
-          <RoomTabs activeTab={activeTab} onTabChange={onTabChange} hasResult={result !== null} />
+          <div className="flex items-center justify-between gap-2">
+            <RoomTabs activeTab={activeTab} onTabChange={onTabChange} />
+            <button
+              type="button"
+              onClick={handleResetSimulation}
+              className="rounded-md bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-300 hover:bg-slate-700"
+              title="Descarta edições manuais e o resultado do Auto-Otimizador, volta ao estado real"
+            >
+              ↺ Resetar Simulação
+            </button>
+          </div>
 
           {showingSimulation && (
             <p className="text-[11px] text-slate-500">
-              Simulação local -- nada foi salvo. Aplique manualmente no jogo se quiser.
+              Simulação local -- nada foi salvo. Aplique manualmente no jogo se quiser. Clique numa rack pra editar.
             </p>
           )}
 
@@ -257,7 +319,11 @@ function RoomVisualization({
               </p>
               <ScaledRoomCanvas>
                 <RoomBackground roomLevel={selectedLevel} />
-                <RoomRacksLayer placements={racksInSelectedLevel} miners={displayMiners} />
+                <RoomRacksLayer
+                  placements={racksInSelectedLevel}
+                  miners={displayMiners}
+                  onRackClick={showingSimulation ? handleRackClick : undefined}
+                />
               </ScaledRoomCanvas>
             </div>
           </div>
@@ -278,6 +344,24 @@ function RoomVisualization({
           {result && <AutoOptimizerSummary result={result} currentPowerWithTemp={playerData.current_power} />}
         </div>
       </div>
+
+      {openRack && (
+        <SimRackModal
+          racksInRoom={racksInSelectedLevel}
+          rackInstanceId={openRack.rackInstanceId}
+          racks={simRoom.racks}
+          miners={simRoom.miners}
+          focusedMinerInstanceId={openRack.focusedMinerInstanceId}
+          inventory={inventory}
+          remainingByEntryKey={remainingByEntryKey}
+          onNavigate={(rackInstanceId) => setOpenRack({ rackInstanceId, focusedMinerInstanceId: null })}
+          onClose={() => setOpenRack(null)}
+          onSwap={onSwapMiner}
+          onRemove={onRemoveMiner}
+          onDismountMiners={onDismountRackMiners}
+          onDismountRack={handleDismountRack}
+        />
+      )}
     </Card>
   )
 }
@@ -314,6 +398,13 @@ function SimuladorContent({ playerData }: { playerData: PlayerData }) {
           result={optimizerState.result}
           activeTab={optimizerState.activeTab}
           onTabChange={optimizerState.setActiveTab}
+          simRoom={optimizerState.simRoom}
+          inventory={entries}
+          onSwapMiner={optimizerState.swapMiner}
+          onRemoveMiner={optimizerState.removeMiner}
+          onDismountRackMiners={optimizerState.dismountRackMiners}
+          onDismountRack={optimizerState.dismountRack}
+          onResetSimulation={optimizerState.resetSimulation}
         />
       </div>
 
