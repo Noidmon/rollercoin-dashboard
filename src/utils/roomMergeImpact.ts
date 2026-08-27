@@ -1,6 +1,7 @@
 import type { MinerMerge } from '../types/miner'
-import { calculateRoomPower, sumUniqueMinerBonusPercent, type Miner as RoomMiner, type Rack } from './calculatePower'
+import { calculateRoomPower, sumRoomBonusPercentWithSets, type Miner as RoomMiner, type Rack } from './calculatePower'
 import type { ResolvedRoomMinerInstance } from './matchMinersInventory'
+import type { MinerSetsData } from './minerSets'
 
 export interface RoomMergeImpact {
   // false quando as requiredPreviousCount cópias do nível de origem não
@@ -24,7 +25,7 @@ export function getRoomImpactColor(impact: RoomMergeImpact | undefined): string 
 }
 
 // Impacto real de UM merge específico na sala -- reaproveita o mesmo motor
-// (calculateRoomPower + sumUniqueMinerBonusPercent) e o mesmo padrão
+// (calculateRoomPower + sumRoomBonusPercentWithSets) e o mesmo padrão
 // baseline/simulado/delta já confirmados e usados pelo Simulador (o total
 // absoluto de cada chamada diverge do max_power real por um erro
 // sistemático da fórmula; só o DELTA entre as duas chamadas é confiável,
@@ -32,6 +33,7 @@ export function getRoomImpactColor(impact: RoomMergeImpact | undefined): string 
 // isolados).
 export function computeRoomMergeImpact(
   minerId: string,
+  minerName: string,
   currentLevel: number,
   requiredCopies: number,
   nextMerge: MinerMerge,
@@ -41,6 +43,7 @@ export function computeRoomMergeImpact(
   gamesPower: number,
   accountBonusPercent: number,
   maxPower: number,
+  setsData: MinerSetsData | null,
 ): RoomMergeImpact {
   const sourceInstances = resolvedRoomInstances.filter(
     (r) => r.minerId === minerId && r.matchedLevel === currentLevel,
@@ -66,6 +69,15 @@ export function computeRoomMergeImpact(
     ...remainingMiners,
     {
       miner_id: nextMerge.mergeId,
+      // name + level (0-indexed, ver comentário no topo do arquivo sobre a
+      // conversão -- nextMerge.level já vem 1-indexed do catálogo, aqui
+      // convertido de volta pra bater com a convenção de room-config)
+      // pra minerSets.ts conseguir casar essa peça simulada contra a
+      // lista de membros de set (Prompt 66) -- sem isso, um merge que
+      // produz um minerador que É membro de set ficaria invisível pro
+      // cálculo de bônus de set na sala simulada.
+      name: minerName,
+      level: nextMerge.level - 1,
       power: nextMerge.power,
       bonus_percent: nextMerge.bonus * 100,
       placement: { user_rack_id: resultRackId },
@@ -74,9 +86,19 @@ export function computeRoomMergeImpact(
 
   const baselineCalc = calculateRoomPower(roomMiners, roomRacks, gamesPower, accountBonusPercent, 0)
 
-  const realRoomBonusPercent = sumUniqueMinerBonusPercent(roomMiners)
+  // Bônus de coleção da sala (dedup por tipo/nível + sets temáticos, ver
+  // sumRoomBonusPercentWithSets/minerSets.ts, Prompt 66) -- antes só o
+  // dedup por tipo entrava aqui, então TODO o bônus de set real da conta
+  // (confirmado ~150 centésimos de %, ver minerSets.ts) ficava escondido
+  // dentro de "externalFixedBonusPercent" como resíduo não explicado.
+  // Agora que o bônus de set é modelado explicitamente, esse resíduo some
+  // (ou fica bem menor, refletindo só o que ainda não é modelado -- ver
+  // limitação de sets "power_ghs" documentada em minerSets.ts) e simulações
+  // que mudam quais sets ficam satisfeitos (raro, mas possível) passam a
+  // refletir isso corretamente em vez de tratar o bônus de set como fixo.
+  const realRoomBonusPercent = sumRoomBonusPercentWithSets(roomMiners, setsData)
   const externalFixedBonusPercent = accountBonusPercent - realRoomBonusPercent
-  const simulatedRoomBonusPercent = sumUniqueMinerBonusPercent(simulatedMiners)
+  const simulatedRoomBonusPercent = sumRoomBonusPercentWithSets(simulatedMiners, setsData)
   const simulatedBonusPercent = simulatedRoomBonusPercent + externalFixedBonusPercent
 
   const simulatedCalc = calculateRoomPower(

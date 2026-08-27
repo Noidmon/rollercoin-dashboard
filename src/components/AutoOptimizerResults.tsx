@@ -21,7 +21,10 @@ function RackLabel({
 }) {
   return (
     <span className="text-slate-400">
-      {rackName} (Sala {roomLevel}, linha {y + 1}, posição {x + 1})
+      {/* roomLevel é 0-indexado internamente -- exibe +1 pra bater com a
+          numeração dos botões de navegação (1/2/3/4), mesma correção do
+          "Sala N" acima do visual (Prompt 66). */}
+      {rackName} (Sala {roomLevel + 1}, linha {y + 1}, posição {x + 1})
     </span>
   )
 }

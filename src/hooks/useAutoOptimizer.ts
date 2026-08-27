@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { getLeagueInfo, LEAGUES } from '../data/leagues'
 import { subtractSmallestDisplayedUnit } from '../utils/formatPower'
 import { runAutoOptimizer, type AutoOptimizerResult, type OptimizerMode, type OptimizerPriority } from '../utils/autoOptimizer'
+import type { MinerSetsData } from '../utils/minerSets'
 import type { EnrichedMinerEntry } from './useMinersInventoryImport'
 import type { PlayerData } from '../context/PlayerContext'
 
@@ -58,6 +59,29 @@ export function useAutoOptimizer(playerData: PlayerData, inventory: EnrichedMine
   // pode voltar pra "Atual" manualmente a qualquer momento.
   const [activeTab, setActiveTab] = useState<RoomTab>('atual')
 
+  // Catálogo de sets temáticos (bônus de coleção por conjunto, ex: "The
+  // Lost Treasure Set") -- Prompt 66. null até carregar; sumRoomBonusPercentWithSets
+  // já trata esse caso (cai pro dedup por tipo sozinho, sem quebrar).
+  const [setsData, setSetsData] = useState<MinerSetsData | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    fetch('/data/miner-sets.json')
+      .then((res) => {
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+        return res.json() as Promise<MinerSetsData>
+      })
+      .then((json) => {
+        if (!cancelled) setSetsData(json)
+      })
+      .catch(() => {
+        // sem catálogo de sets -- segue funcionando só com o dedup por
+        // tipo/nível, igual ao comportamento de antes do Prompt 66.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   function runOptimizer() {
     const ceilingGhs = leagueCeilingGhs(leagueIndex)
 
@@ -68,6 +92,7 @@ export function useAutoOptimizer(playerData: PlayerData, inventory: EnrichedMine
       installedMiners: playerData.roomConfig.miners,
       racks: playerData.roomConfig.racks,
       inventory,
+      setsData,
     })
     setResult(optimizerResult)
     setActiveTab('simulacao')

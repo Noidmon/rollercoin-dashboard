@@ -32,7 +32,10 @@ export default function AutoOptimizerSummary({
 
   return (
     <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      {/* Empilhado (1 coluna) -- esse card mora na coluna estreita do
+          lado direito da sala (Prompt 66, embaixo do botão Otimizar), não
+          mais no espaço largo entre as abas e o visual. */}
+      <div className="flex flex-col gap-3">
         <div>
           <p className="text-[11px] uppercase tracking-wide text-slate-500">Poder Atual</p>
           <p className="text-sm text-slate-200">

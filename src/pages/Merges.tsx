@@ -12,6 +12,7 @@ import {
   type ResolvedRoomMinerInstance,
 } from '../utils/matchMinersInventory'
 import { computeRoomMergeImpact, type RoomMergeImpact } from '../utils/roomMergeImpact'
+import type { MinerSetsData } from '../utils/minerSets'
 import type { Miner as RoomMiner, Rack } from '../utils/calculatePower'
 import type { MinerInventoryEntry } from '../utils/parseMinersInventory'
 import type { PartInventoryEntry } from '../utils/parsePartsInventory'
@@ -381,6 +382,7 @@ function FullChain({
     if (!stepMerge) return null
     return computeRoomMergeImpact(
       miner.id,
+      miner.name,
       step.fromLevel,
       step.requiredCopies,
       stepMerge,
@@ -390,6 +392,7 @@ function FullChain({
       roomImpactContext.gamesPower,
       roomImpactContext.accountBonusPercent,
       roomImpactContext.maxPower,
+      roomImpactContext.setsData,
     )
   })
 
@@ -438,6 +441,7 @@ interface RoomImpactContext {
   gamesPower: number
   accountBonusPercent: number
   maxPower: number
+  setsData: MinerSetsData | null
 }
 
 export default function Merges() {
@@ -449,6 +453,12 @@ export default function Merges() {
   const [minersData, setMinersData] = useState<MinersData | null>(null)
   const [craftingPrices, setCraftingPrices] = useState<CraftingPrices | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  // Catálogo de sets temáticos (Prompt 66) -- carregado à parte do
+  // Promise.all crítico abaixo: se falhar, "Impacto Real" continua
+  // funcionando só com o dedup por tipo/nível (sumRoomBonusPercentWithSets
+  // trata setsData null sem quebrar), não é motivo pra página inteira
+  // mostrar erro.
+  const [setsData, setSetsData] = useState<MinerSetsData | null>(null)
 
   const [minersPasteText, setMinersPasteText] = useState('')
   const [partsPasteText, setPartsPasteText] = useState('')
@@ -500,6 +510,25 @@ export default function Merges() {
         if (!cancelled) setLoadError(err instanceof Error ? err.message : String(err))
       })
 
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/data/miner-sets.json')
+      .then((res) => {
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+        return res.json() as Promise<MinerSetsData>
+      })
+      .then((json) => {
+        if (!cancelled) setSetsData(json)
+      })
+      .catch(() => {
+        // sem catálogo de sets -- Impacto Real segue funcionando só com o
+        // dedup por tipo/nível, igual ao comportamento de antes do Prompt 66.
+      })
     return () => {
       cancelled = true
     }
@@ -669,8 +698,9 @@ export default function Merges() {
       gamesPower: playerData.games,
       accountBonusPercent: playerData.bonus_percent,
       maxPower: playerData.max_power,
+      setsData,
     }
-  }, [playerData, resolvedRoomInstances])
+  }, [playerData, resolvedRoomInstances, setsData])
 
   // Impacto real (delta de poder simulado) do PRÓXIMO merge de cada
   // minerador -- alimenta o badge de qualidade, os filtros "Válidos" e a
@@ -687,6 +717,7 @@ export default function Merges() {
         need.minerId,
         computeRoomMergeImpact(
           need.minerId,
+          need.minerName,
           need.currentLevel,
           need.requiredCopies,
           nextMerge,
@@ -696,6 +727,7 @@ export default function Merges() {
           roomImpactContext.gamesPower,
           roomImpactContext.accountBonusPercent,
           roomImpactContext.maxPower,
+          roomImpactContext.setsData,
         ),
       )
     }

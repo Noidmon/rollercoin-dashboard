@@ -53,12 +53,13 @@
 // vale trocar algum colocado fraco) passa pela heurística.
 import {
   calculateRoomPower,
-  sumUniqueMinerBonusPercent,
+  sumRoomBonusPercentWithSets,
   type Miner as RoomMinerInstance,
   type Rack,
 } from './calculatePower'
 import { roomConfigToRackPlacements } from './roomLayout'
 import type { EnrichedMinerEntry } from '../hooks/useMinersInventoryImport'
+import { isNameInAnySet, type MinerSetsData } from './minerSets'
 
 export type OptimizerPriority = 'padrao' | 'poder_bruto'
 export type OptimizerMode = 'maximo_poder' | 'preservar_sala'
@@ -73,6 +74,23 @@ interface Candidate {
   name: string
   power: number
   bonusPercent: number // convenção nativa de room-config (centésimos de %)
+  // Nível na convenção de room-config (nº de merges feitos, 0-indexed) --
+  // precisa ir junto pra minerSets.ts conseguir casar contra o catálogo de
+  // sets (que usa o nível de raridade 1-indexed, level+1) na hora de
+  // recalcular o total FINAL via buildFinalMiners. Bug real corrigido
+  // (Prompt 66): sem isso, TODO minerador simulado perdia o próprio nível
+  // (virava 0/undefined), quebrando o bônus de set inteiro pra QUALQUER
+  // simulação -- mesmo uma que não tocasse nos membros do set.
+  level: number
+  // `type` room-config (ex: "merge", "old_merge"/"legacy") e `isInSet`
+  // (fato estático de catálogo, ver isNameInAnySet) -- só usados pro selo
+  // visual (minerLevelBadges/RoomRacksLayer), sem efeito no cálculo de
+  // poder/bônus. Sem esses dois, TODO minerador reconstruído via
+  // buildFinalMiners perdia o selo de nível/set na aba Simulação (bug real
+  // encontrado testando visualmente o Prompt 66 -- badges desapareciam da
+  // sala inteira, não só de quem mudou).
+  type: string | undefined
+  isInSet: boolean | undefined
   cells: 1 | 2
   image: string | null
   origin: 'installed' | 'inventory'
@@ -87,6 +105,9 @@ interface CandidateGroup {
   roomDedupMinerId: string
   name: string
   power: number
+  level: number
+  type: string | undefined
+  isInSet: boolean | undefined
   bonusPercent: number
   cells: 1 | 2
   image: string | null
@@ -113,6 +134,13 @@ export interface OptimizerPlacement {
   // bonus_percent de verdade, não 0) na hora de recalcular o total final
   // via calculateRoomPower/sumUniqueMinerBonusPercent.
   bonusPercent: number
+  // Convenção nativa de room-config (nº de merges feitos, 0-indexed) --
+  // ver o comentário equivalente em Candidate.level (Prompt 66).
+  level: number
+  // Ver comentário equivalente em Candidate (Prompt 66) -- só pro selo
+  // visual, sem efeito no cálculo.
+  type: string | undefined
+  isInSet: boolean | undefined
   cells: 1 | 2
   image: string | null
   origin: 'installed' | 'inventory'
@@ -180,6 +208,10 @@ export interface AutoOptimizerInput {
   installedMiners: RoomMinerInstance[]
   racks: Rack[]
   inventory: EnrichedMinerEntry[]
+  // Catálogo de sets temáticos (public/data/miner-sets.json) -- null
+  // enquanto ainda não carregou (nesse caso o bônus de set fica de fora do
+  // cálculo até carregar, sem quebrar nada -- ver sumRoomBonusPercentWithSets).
+  setsData: MinerSetsData | null
 }
 
 // Tracker incremental do MESMO formato de calculateRoomPower (gamesPower=0,
@@ -297,6 +329,9 @@ function placeInstalledAtOriginalPositions(
       name: m.name ?? '?',
       power: m.power,
       bonusPercent: m.bonus_percent ?? 0,
+      level: m.level ?? 0,
+      type: m.type,
+      isInSet: m.is_in_set,
       cells,
       image: null,
       origin: 'installed',
@@ -315,7 +350,11 @@ function placeInstalledAtOriginalPositions(
 // Expande cada entrada do inventário em até `quantity` cópias idênticas,
 // capado pelo total de células físicas disponíveis (nunca precisamos de
 // mais cópias do que cabe fisicamente na sala inteira).
-function buildInventoryCandidates(inventory: EnrichedMinerEntry[], totalFreeCells: number): Candidate[] {
+function buildInventoryCandidates(
+  inventory: EnrichedMinerEntry[],
+  totalFreeCells: number,
+  setsData: MinerSetsData | null,
+): Candidate[] {
   const candidates: Candidate[] = []
   let cellsUsedSoFar = 0
 
@@ -323,6 +362,17 @@ function buildInventoryCandidates(inventory: EnrichedMinerEntry[], totalFreeCell
     const cells = entry.cells === 2 ? 2 : 1
     const maxCopiesByCells = Math.floor((totalFreeCells - cellsUsedSoFar) / cells)
     const copies = Math.max(0, Math.min(entry.quantity, maxCopiesByCells))
+    const level = entry.matchedLevel === 0 ? 0 : entry.matchedLevel - 1
+    // Inventário colado não informa "type" real (old_merge/legacy vs
+    // merge) -- não dá pra distinguir peça vintage/legacy só por
+    // nome+power. Aproxima como 'merge' quando o nível indica que passou
+    // por merge (level>0), que é o caso que faz o selo aparecer; miners
+    // base (level=0) nunca mostram selo de nível de qualquer forma, então
+    // o valor de `type` não importa nesse caso. Limitação documentada, não
+    // escondida: um legacy raro apareceria com o selo de nível normal em
+    // vez do selo especial "legacy", nunca com o selo faltando.
+    const type = level > 0 ? 'merge' : undefined
+    const isInSet = setsData ? isNameInAnySet(entry.name, setsData) : undefined
 
     for (let i = 0; i < copies; i++) {
       candidates.push({
@@ -332,6 +382,13 @@ function buildInventoryCandidates(inventory: EnrichedMinerEntry[], totalFreeCell
         name: entry.name,
         power: entry.power,
         bonusPercent: entry.bonus * 100, // catálogo (%) -> convenção room-config (centésimos de %)
+        // matchedLevel usa a numeração de raridade do catálogo (0, 2, 3, 4,
+        // 5, 6 -- pula o "1"); converte pra convenção 0-indexada de
+        // room-config (nº de merges feitos) subtraindo 1, exceto no caso
+        // base (0 continua 0 nos dois esquemas).
+        level,
+        type,
+        isInSet,
         cells,
         image: entry.image,
         origin: 'inventory' as const,
@@ -354,6 +411,9 @@ function groupCandidates(candidates: Candidate[]): CandidateGroup[] {
         roomDedupMinerId: c.roomDedupMinerId,
         name: c.name,
         power: c.power,
+        level: c.level,
+        type: c.type,
+        isInSet: c.isInSet,
         bonusPercent: c.bonusPercent,
         cells: c.cells,
         image: c.image,
@@ -383,6 +443,9 @@ function placementFromCandidate(candidate: Candidate, row: WorkingRow, x: 0 | 1)
     name: candidate.name,
     power: candidate.power,
     bonusPercent: candidate.bonusPercent,
+    level: candidate.level,
+    type: candidate.type,
+    isInSet: candidate.isInSet,
     cells: candidate.cells,
     image: candidate.image,
     origin: candidate.origin,
@@ -490,13 +553,16 @@ function buildFinalMiners(placements: OptimizerPlacement[]): RoomMinerInstance[]
     name: p.name,
     power: p.power,
     bonus_percent: p.bonusPercent,
+    level: p.level,
+    type: p.type,
+    is_in_set: p.isInSet,
     placement: { user_rack_id: p.rackInstanceId, x: p.x, y: p.y },
     width: p.cells,
   }))
 }
 
-function totalPowerNoTemp(miners: RoomMinerInstance[], racks: Rack[]): number {
-  const bonusPercent = sumUniqueMinerBonusPercent(miners)
+function totalPowerNoTemp(miners: RoomMinerInstance[], racks: Rack[], setsData: MinerSetsData | null): number {
+  const bonusPercent = sumRoomBonusPercentWithSets(miners, setsData)
   return calculateRoomPower(miners, racks, 0, bonusPercent, 0).total
 }
 
@@ -506,8 +572,9 @@ function totalPowerNoTemp(miners: RoomMinerInstance[], racks: Rack[]): number {
 function roomPowerBreakdownNoTemp(
   miners: RoomMinerInstance[],
   racks: Rack[],
+  setsData: MinerSetsData | null,
 ): { total: number; bonusPercent: number; bonusValue: number } {
-  const bonusPercent = sumUniqueMinerBonusPercent(miners)
+  const bonusPercent = sumRoomBonusPercentWithSets(miners, setsData)
   const breakdown = calculateRoomPower(miners, racks, 0, bonusPercent, 0)
   return { total: breakdown.total, bonusPercent, bonusValue: breakdown.collectionBonus }
 }
@@ -519,6 +586,9 @@ function placementFromInventoryCandidateAt(candidate: Candidate, at: OptimizerPl
     name: candidate.name,
     power: candidate.power,
     bonusPercent: candidate.bonusPercent,
+    level: candidate.level,
+    type: candidate.type,
+    isInSet: candidate.isInSet,
     cells: candidate.cells,
     image: candidate.image,
     origin: 'inventory',
@@ -591,11 +661,12 @@ function runIterativeImprovement(
   racks: Rack[],
   ceilingGhs: number,
   priority: OptimizerPriority,
+  setsData: MinerSetsData | null,
 ): IterativeImprovementResult {
   const startedAt = Date.now()
   let current = [...initialPlacements]
   let remaining = [...initialRemainingInventory]
-  let currentTotal = totalPowerNoTemp(buildFinalMiners(current), racks)
+  let currentTotal = totalPowerNoTemp(buildFinalMiners(current), racks, setsData)
 
   let iterations = 0
   let converged = false
@@ -620,7 +691,7 @@ function runIterativeImprovement(
         if (cand.cells === 2 && row.freeXs.length !== 2) continue
 
         const trial = [...current, placementFromCandidate(cand, row, 0)]
-        const total = totalPowerNoTemp(buildFinalMiners(trial), racks)
+        const total = totalPowerNoTemp(buildFinalMiners(trial), racks, setsData)
         if (total > ceilingGhs || total <= currentTotal) continue
         if (!best || total > best.total) best = { kind: 'fill', row, candidate: cand, total }
       }
@@ -638,7 +709,7 @@ function runIterativeImprovement(
         if (priority === 'poder_bruto' && cand.power <= oldP.power) continue
 
         const trial = [...current.filter((p) => p !== oldP), placementFromInventoryCandidateAt(cand, oldP)]
-        const total = totalPowerNoTemp(buildFinalMiners(trial), racks)
+        const total = totalPowerNoTemp(buildFinalMiners(trial), racks, setsData)
         if (total > ceilingGhs || total <= currentTotal) continue
         if (!best || total > best.total) best = { kind: 'swap', oldP, candidate: cand, total }
       }
@@ -663,9 +734,9 @@ function runIterativeImprovement(
 }
 
 export function runAutoOptimizer(input: AutoOptimizerInput): AutoOptimizerResult {
-  const { mode, priority, ceilingGhs, installedMiners, racks, inventory } = input
+  const { mode, priority, ceilingGhs, installedMiners, racks, inventory, setsData } = input
 
-  const before = roomPowerBreakdownNoTemp(installedMiners, racks)
+  const before = roomPowerBreakdownNoTemp(installedMiners, racks, setsData)
   const installedWithPlacement = installedMiners.filter(hasValidPlacement)
 
   // Base comum aos dois modos: TODO instalado começa na própria posição
@@ -691,7 +762,7 @@ export function runAutoOptimizer(input: AutoOptimizerInput): AutoOptimizerResult
   // isso sem soltar candidatos além do que a sala poderia fisicamente usar
   // em QUALQUER arranjo (preenchimento ou troca).
   const totalCapacityCells = baseRows.reduce((sum, r) => sum + r.freeXs.length, 0)
-  const inventoryCandidates = buildInventoryCandidates(inventory, totalCapacityCells)
+  const inventoryCandidates = buildInventoryCandidates(inventory, totalCapacityCells, setsData)
 
   const baseTracker = new RoomPowerTracker()
   const installedPlacements = placeInstalledAtOriginalPositions(baseRows, installedWithPlacement, baseTracker)
@@ -737,6 +808,7 @@ export function runAutoOptimizer(input: AutoOptimizerInput): AutoOptimizerResult
       racks,
       ceilingGhs,
       priority,
+      setsData,
     )
     finalPlacements = improvement.placements
     iterativeSearch = {
@@ -747,7 +819,7 @@ export function runAutoOptimizer(input: AutoOptimizerInput): AutoOptimizerResult
   }
 
   const finalMiners = buildFinalMiners(finalPlacements)
-  const after = roomPowerBreakdownNoTemp(finalMiners, racks)
+  const after = roomPowerBreakdownNoTemp(finalMiners, racks, setsData)
 
   const changedPlacements = finalPlacements.filter((p) => !p.unchanged)
 

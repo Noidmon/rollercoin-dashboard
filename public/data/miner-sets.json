@@ -1,0 +1,695 @@
+{
+  "generatedAt": "2026-08-27T18:48:52.502Z",
+  "total": 17,
+  "sets": [
+    {
+      "id": 7,
+      "name": "Alien Set",
+      "rewardType": "bonus_percent",
+      "levels": [
+        {
+          "level": 1,
+          "requiredCount": 2,
+          "rewardValue": 5
+        },
+        {
+          "level": 2,
+          "requiredCount": 4,
+          "rewardValue": 10
+        }
+      ],
+      "members": [
+        {
+          "name": "Codename Blue",
+          "level": 1
+        },
+        {
+          "name": "Codename Red",
+          "level": 1
+        },
+        {
+          "name": "Codename Green",
+          "level": 1
+        },
+        {
+          "name": "Codename Gold",
+          "level": 1
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "name": "Asgardian Set",
+      "rewardType": "bonus_percent",
+      "levels": [
+        {
+          "level": 1,
+          "requiredCount": 2,
+          "rewardValue": 8
+        },
+        {
+          "level": 2,
+          "requiredCount": 4,
+          "rewardValue": 24
+        }
+      ],
+      "members": [
+        {
+          "name": "Aegis of Gold",
+          "level": 1
+        },
+        {
+          "name": "Voidstone",
+          "level": 1
+        },
+        {
+          "name": "Celestial Eye",
+          "level": 1
+        },
+        {
+          "name": "Divine Core",
+          "level": 1
+        },
+        {
+          "name": "Soul Devourer",
+          "level": 1
+        },
+        {
+          "name": "Elder Beast",
+          "level": 1
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "name": "Beach Set",
+      "rewardType": "bonus_percent",
+      "levels": [
+        {
+          "level": 1,
+          "requiredCount": 2,
+          "rewardValue": 50
+        },
+        {
+          "level": 2,
+          "requiredCount": 3,
+          "rewardValue": 100
+        },
+        {
+          "level": 3,
+          "requiredCount": 4,
+          "rewardValue": 250
+        }
+      ],
+      "members": [
+        {
+          "name": "Mine-a Colada",
+          "level": 1
+        },
+        {
+          "name": "Tai One On",
+          "level": 1
+        },
+        {
+          "name": "Bartender",
+          "level": 1
+        },
+        {
+          "name": "Salt & Vault",
+          "level": 1
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "name": "Beer Pack Set",
+      "rewardType": "power_ghs",
+      "levels": [
+        {
+          "level": 1,
+          "requiredCount": 2,
+          "rewardValue": 5000000
+        },
+        {
+          "level": 2,
+          "requiredCount": 3,
+          "rewardValue": 8000000
+        }
+      ],
+      "members": [
+        {
+          "name": "Just One Beer",
+          "level": 1
+        },
+        {
+          "name": "Just Enough",
+          "level": 1
+        },
+        {
+          "name": "Das Ist Gut",
+          "level": 1
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "name": "Bronze Farm Set",
+      "rewardType": "power_ghs",
+      "levels": [
+        {
+          "level": 1,
+          "requiredCount": 2,
+          "rewardValue": 1500000
+        },
+        {
+          "level": 2,
+          "requiredCount": 4,
+          "rewardValue": 2500000
+        }
+      ],
+      "members": [
+        {
+          "name": "BronzeCorn",
+          "level": 1
+        },
+        {
+          "name": "BronzeTomato",
+          "level": 1
+        },
+        {
+          "name": "BronzeBlueberries",
+          "level": 1
+        },
+        {
+          "name": "BronzePumpkin",
+          "level": 1
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "name": "Designer Set",
+      "rewardType": "bonus_percent",
+      "levels": [
+        {
+          "level": 1,
+          "requiredCount": 2,
+          "rewardValue": 15
+        },
+        {
+          "level": 2,
+          "requiredCount": 4,
+          "rewardValue": 40
+        },
+        {
+          "level": 3,
+          "requiredCount": 6,
+          "rewardValue": 75
+        },
+        {
+          "level": 4,
+          "requiredCount": 8,
+          "rewardValue": 120
+        }
+      ],
+      "members": [
+        {
+          "name": "Hames Hirkin",
+          "level": 1
+        },
+        {
+          "name": "Hamel Classic",
+          "level": 1
+        },
+        {
+          "name": "Hamior Lady",
+          "level": 1
+        },
+        {
+          "name": "Hames Hamelly",
+          "level": 1
+        },
+        {
+          "name": "Hamior Haddle",
+          "level": 1
+        },
+        {
+          "name": "Hamuis Hamton",
+          "level": 1
+        },
+        {
+          "name": "Hammuchi Hamhidia",
+          "level": 1
+        },
+        {
+          "name": "Hiu Hamder",
+          "level": 1
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "name": "Globes Set",
+      "rewardType": "power_ghs",
+      "levels": [
+        {
+          "level": 1,
+          "requiredCount": 2,
+          "rewardValue": 10000000
+        },
+        {
+          "level": 2,
+          "requiredCount": 4,
+          "rewardValue": 25000000
+        }
+      ],
+      "members": [
+        {
+          "name": "BellGlobe",
+          "level": 1
+        },
+        {
+          "name": "BowGlobe",
+          "level": 1
+        },
+        {
+          "name": "ToyGlobe",
+          "level": 1
+        },
+        {
+          "name": "WishGlobe",
+          "level": 1
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Golden Farm Set",
+      "rewardType": "bonus_percent",
+      "levels": [
+        {
+          "level": 1,
+          "requiredCount": 2,
+          "rewardValue": 2
+        },
+        {
+          "level": 2,
+          "requiredCount": 4,
+          "rewardValue": 7
+        }
+      ],
+      "members": [
+        {
+          "name": "GoldenCarrot",
+          "level": 1
+        },
+        {
+          "name": "GoldenEchinopsis",
+          "level": 1
+        },
+        {
+          "name": "GoldenTomato",
+          "level": 1
+        },
+        {
+          "name": "GoldenMelon",
+          "level": 1
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "IMPERIAL Set",
+      "rewardType": "bonus_percent",
+      "levels": [
+        {
+          "level": 1,
+          "requiredCount": 2,
+          "rewardValue": 5
+        },
+        {
+          "level": 2,
+          "requiredCount": 3,
+          "rewardValue": 10
+        }
+      ],
+      "members": [
+        {
+          "name": "Romulus IMPERIUM",
+          "level": 1
+        },
+        {
+          "name": "Conquest IMPERIUM",
+          "level": 1
+        },
+        {
+          "name": "PAX IMPERIUM",
+          "level": 1
+        },
+        {
+          "name": "Romulus IMPERIUM",
+          "level": 2
+        },
+        {
+          "name": "Romulus IMPERIUM",
+          "level": 3
+        },
+        {
+          "name": "Conquest IMPERIUM",
+          "level": 2
+        },
+        {
+          "name": "Conquest IMPERIUM",
+          "level": 3
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "name": "Power-Up Set",
+      "rewardType": "power_ghs",
+      "levels": [
+        {
+          "level": 1,
+          "requiredCount": 2,
+          "rewardValue": 5000000
+        },
+        {
+          "level": 2,
+          "requiredCount": 3,
+          "rewardValue": 10000000
+        }
+      ],
+      "members": [
+        {
+          "name": "Quantum Conductor",
+          "level": 1
+        },
+        {
+          "name": "Energy Amplifier",
+          "level": 1
+        },
+        {
+          "name": "Nano-Node Extractor",
+          "level": 1
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "name": "Radio Set",
+      "rewardType": "bonus_percent",
+      "levels": [
+        {
+          "level": 1,
+          "requiredCount": 2,
+          "rewardValue": 40
+        },
+        {
+          "level": 2,
+          "requiredCount": 3,
+          "rewardValue": 60
+        },
+        {
+          "level": 3,
+          "requiredCount": 4,
+          "rewardValue": 90
+        }
+      ],
+      "members": [
+        {
+          "name": "Vote Fired",
+          "level": 4
+        },
+        {
+          "name": "Signar Search",
+          "level": 4
+        },
+        {
+          "name": "Friendship is Magic",
+          "level": 4
+        },
+        {
+          "name": "Roller Radio",
+          "level": 4
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "name": "Roadside Stars Set",
+      "rewardType": "bonus_percent",
+      "levels": [
+        {
+          "level": 1,
+          "requiredCount": 2,
+          "rewardValue": 20
+        },
+        {
+          "level": 2,
+          "requiredCount": 3,
+          "rewardValue": 50
+        },
+        {
+          "level": 3,
+          "requiredCount": 4,
+          "rewardValue": 80
+        }
+      ],
+      "members": [
+        {
+          "name": "Taco Turn",
+          "level": 5
+        },
+        {
+          "name": "Taco Turn",
+          "level": 6
+        },
+        {
+          "name": "Burger Boulevard",
+          "level": 5
+        },
+        {
+          "name": "Burger Boulevard",
+          "level": 6
+        },
+        {
+          "name": "Hot Dog Highway",
+          "level": 5
+        },
+        {
+          "name": "Hot Dog Highway",
+          "level": 6
+        },
+        {
+          "name": "Sushi Stop",
+          "level": 5
+        },
+        {
+          "name": "Sushi Stop",
+          "level": 6
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "name": "Royal Set",
+      "rewardType": "bonus_percent",
+      "levels": [
+        {
+          "level": 1,
+          "requiredCount": 2,
+          "rewardValue": 25
+        },
+        {
+          "level": 2,
+          "requiredCount": 4,
+          "rewardValue": 45
+        }
+      ],
+      "members": [
+        {
+          "name": "Diamond Note",
+          "level": 1
+        },
+        {
+          "name": "Club Note",
+          "level": 1
+        },
+        {
+          "name": "Heart Note",
+          "level": 1
+        },
+        {
+          "name": "Spade Note",
+          "level": 1
+        },
+        {
+          "name": "Royal Note",
+          "level": 1
+        },
+        {
+          "name": "Royal Note",
+          "level": 2
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "name": "Runners Set",
+      "rewardType": "bonus_percent",
+      "levels": [
+        {
+          "level": 1,
+          "requiredCount": 2,
+          "rewardValue": 10
+        },
+        {
+          "level": 2,
+          "requiredCount": 4,
+          "rewardValue": 20
+        }
+      ],
+      "members": [
+        {
+          "name": "Ignite Runner",
+          "level": 1
+        },
+        {
+          "name": "Acid Runner",
+          "level": 1
+        },
+        {
+          "name": "Scarlet Runner",
+          "level": 1
+        },
+        {
+          "name": "Eva Runner",
+          "level": 1
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "name": "Silver Farm Set",
+      "rewardType": "power_ghs",
+      "levels": [
+        {
+          "level": 1,
+          "requiredCount": 2,
+          "rewardValue": 2000000
+        },
+        {
+          "level": 2,
+          "requiredCount": 4,
+          "rewardValue": 3000000
+        }
+      ],
+      "members": [
+        {
+          "name": "SilverBerries",
+          "level": 1
+        },
+        {
+          "name": "SilverMulberries",
+          "level": 1
+        },
+        {
+          "name": "SilverCabbage",
+          "level": 1
+        },
+        {
+          "name": "SilverWheat",
+          "level": 1
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "Super Bros Set",
+      "rewardType": "power_ghs",
+      "levels": [
+        {
+          "level": 1,
+          "requiredCount": 2,
+          "rewardValue": 7500000
+        },
+        {
+          "level": 2,
+          "requiredCount": 3,
+          "rewardValue": 15000000
+        }
+      ],
+      "members": [
+        {
+          "name": "Miner Bros Classic",
+          "level": 1
+        },
+        {
+          "name": "Miner Bros Advanced",
+          "level": 1
+        },
+        {
+          "name": "Miner Bros Pro",
+          "level": 1
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "name": "The Lost Treasure Set",
+      "rewardType": "bonus_percent",
+      "levels": [
+        {
+          "level": 1,
+          "requiredCount": 2,
+          "rewardValue": 20
+        },
+        {
+          "level": 2,
+          "requiredCount": 3,
+          "rewardValue": 50
+        },
+        {
+          "level": 3,
+          "requiredCount": 4,
+          "rewardValue": 80
+        }
+      ],
+      "members": [
+        {
+          "name": "Manners & Mayhem",
+          "level": 5
+        },
+        {
+          "name": "Manners & Mayhem",
+          "level": 6
+        },
+        {
+          "name": "Gilded Greed",
+          "level": 5
+        },
+        {
+          "name": "Gilded Greed",
+          "level": 6
+        },
+        {
+          "name": "Wrongway Atlas",
+          "level": 5
+        },
+        {
+          "name": "Wrongway Atlas",
+          "level": 6
+        },
+        {
+          "name": "Drama Chest",
+          "level": 5
+        },
+        {
+          "name": "Drama Chest",
+          "level": 6
+        }
+      ]
+    }
+  ]
+}

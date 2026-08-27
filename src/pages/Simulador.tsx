@@ -221,12 +221,9 @@ function RoomVisualization({
           <RoomTabs activeTab={activeTab} onTabChange={onTabChange} hasResult={result !== null} />
 
           {showingSimulation && (
-            <>
-              <AutoOptimizerSummary result={result!} currentPowerWithTemp={playerData.current_power} />
-              <p className="text-[11px] text-slate-500">
-                Simulação local -- nada foi salvo. Aplique manualmente no jogo se quiser.
-              </p>
-            </>
+            <p className="text-[11px] text-slate-500">
+              Simulação local -- nada foi salvo. Aplique manualmente no jogo se quiser.
+            </p>
           )}
 
           <div className="flex items-start gap-3">
@@ -239,7 +236,7 @@ function RoomVisualization({
                     type="button"
                     disabled={!unlocked}
                     onClick={() => setSelectedLevel(level)}
-                    title={unlocked ? `Sala ${level}` : 'Sala não desbloqueada'}
+                    title={unlocked ? `Sala ${level + 1}` : 'Sala não desbloqueada'}
                     className={`flex h-10 w-10 items-center justify-center rounded-md border text-sm font-bold transition ${
                       !unlocked
                         ? 'cursor-not-allowed border-slate-800 text-slate-700'
@@ -256,7 +253,7 @@ function RoomVisualization({
 
             <div className="min-w-0 flex-1">
               <p className="mb-2 text-xs text-slate-400">
-                Sala {selectedLevel} ({racksInSelectedLevel.length} racks)
+                Sala {selectedLevel + 1} ({racksInSelectedLevel.length} racks)
               </p>
               <ScaledRoomCanvas>
                 <RoomBackground roomLevel={selectedLevel} />
@@ -266,16 +263,20 @@ function RoomVisualization({
           </div>
         </div>
 
-        <AutoOptimizerControls
-          priority={optimizer.priority}
-          onPriorityChange={optimizer.setPriority}
-          mode={optimizer.mode}
-          onModeChange={optimizer.setMode}
-          leagueIndex={optimizer.leagueIndex}
-          onLeagueIndexChange={optimizer.setLeagueIndex}
-          onOptimize={optimizer.runOptimizer}
-          disabled={optimizer.disabled}
-        />
+        <div className="flex w-full shrink-0 flex-col gap-4 lg:w-64">
+          <AutoOptimizerControls
+            priority={optimizer.priority}
+            onPriorityChange={optimizer.setPriority}
+            mode={optimizer.mode}
+            onModeChange={optimizer.setMode}
+            leagueIndex={optimizer.leagueIndex}
+            onLeagueIndexChange={optimizer.setLeagueIndex}
+            onOptimize={optimizer.runOptimizer}
+            disabled={optimizer.disabled}
+          />
+
+          {result && <AutoOptimizerSummary result={result} currentPowerWithTemp={playerData.current_power} />}
+        </div>
       </div>
     </Card>
   )

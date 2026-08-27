@@ -1,3 +1,5 @@
+import { computeSetBonusPercentCentesimos, type MinerSetsData } from './minerSets'
+
 export interface Miner {
   _id?: string
   miner_id?: string
@@ -102,4 +104,19 @@ export function sumUniqueMinerBonusPercent(
     sum += value
   }
   return sum
+}
+
+// Função-irmã de sumUniqueMinerBonusPercent -- soma o bônus dedup por
+// tipo/nível COM o bônus de sets temáticos (ex: "The Lost Treasure Set"),
+// confirmado contra dado real (Prompt 66, ver minerSets.ts pra fonte do
+// dado e validação exata). setsData é opcional (undefined enquanto
+// public/data/miner-sets.json ainda não carregou) -- nesse caso devolve só
+// o dedup por tipo, igual ao comportamento antigo, em vez de quebrar.
+export function sumRoomBonusPercentWithSets(
+  miners: (Pick<Miner, 'miner_id' | 'bonus_percent'> & Pick<Miner, 'name' | 'level'>)[],
+  setsData: MinerSetsData | null | undefined,
+): number {
+  const dedupBonus = sumUniqueMinerBonusPercent(miners)
+  if (!setsData) return dedupBonus
+  return dedupBonus + computeSetBonusPercentCentesimos(miners, setsData)
 }
