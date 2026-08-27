@@ -574,10 +574,13 @@ function totalPowerNoTemp(miners: RoomMinerInstance[], racks: Rack[], setsData: 
   return calculateRoomPower(miners, racks, 0, bonusPercent, 0).total
 }
 
-// Versão com o detalhamento de bônus (% e valor) -- usada só nos pontos
-// ANTES/DEPOIS finais (não durante a busca, que só precisa do total via
-// totalPowerNoTemp) pro resumo da UI (Prompt 65: "Bônus atual -> estimado").
-function roomPowerBreakdownNoTemp(
+// Versão com o detalhamento de bônus (% e valor) -- usada nos pontos
+// ANTES/DEPOIS (não durante a busca, que só precisa do total via
+// totalPowerNoTemp) pro resumo da UI (Prompt 65: "Bônus atual ->
+// estimado"). Exportada (Prompt 72) -- useAutoOptimizer usa direto pra
+// recalcular o resumo AO VIVO a partir de simRoom a cada edição manual,
+// não só depois de rodar o otimizador (ver bug real corrigido lá).
+export function roomPowerBreakdownNoTemp(
   miners: RoomMinerInstance[],
   racks: Rack[],
   setsData: MinerSetsData | null,

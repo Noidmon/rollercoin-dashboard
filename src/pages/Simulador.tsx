@@ -16,9 +16,9 @@ import SimRackModal from '../components/SimRackModal'
 import { roomConfigToRackPlacements } from '../utils/roomLayout'
 import { computeRemainingInventory } from '../utils/simRoom'
 import { useMinersInventoryImport, type EnrichedMinerEntry } from '../hooks/useMinersInventoryImport'
-import { useAutoOptimizer, type RoomTab } from '../hooks/useAutoOptimizer'
+import { useAutoOptimizer, type LiveOptimizerSummary, type RoomTab } from '../hooks/useAutoOptimizer'
 import type { PlayerData } from '../context/PlayerContext'
-import type { AutoOptimizerResult, OptimizerMode, OptimizerPriority } from '../utils/autoOptimizer'
+import type { OptimizerMode, OptimizerPriority } from '../utils/autoOptimizer'
 import type { SimRoomState } from '../utils/simRoom'
 
 interface OptimizerControlsProps {
@@ -177,7 +177,7 @@ function RoomVisualization({
   unrecognizedCount,
   recognizedCount,
   optimizer,
-  result,
+  liveSummary,
   activeTab,
   onTabChange,
   simRoom,
@@ -195,7 +195,7 @@ function RoomVisualization({
   unrecognizedCount: number | null
   recognizedCount: number
   optimizer: OptimizerControlsProps
-  result: AutoOptimizerResult | null
+  liveSummary: LiveOptimizerSummary
   activeTab: RoomTab
   onTabChange: (tab: RoomTab) => void
   simRoom: SimRoomState
@@ -341,7 +341,7 @@ function RoomVisualization({
             disabled={optimizer.disabled}
           />
 
-          {result && <AutoOptimizerSummary result={result} currentPowerWithTemp={playerData.current_power} />}
+          <AutoOptimizerSummary summary={liveSummary} currentPowerWithTemp={playerData.current_power} />
         </div>
       </div>
 
@@ -395,7 +395,7 @@ function SimuladorContent({ playerData }: { playerData: PlayerData }) {
           unrecognizedCount={unrecognizedCount}
           recognizedCount={entries.length}
           optimizer={optimizer}
-          result={optimizerState.result}
+          liveSummary={optimizerState.liveSummary}
           activeTab={optimizerState.activeTab}
           onTabChange={optimizerState.setActiveTab}
           simRoom={optimizerState.simRoom}

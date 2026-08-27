@@ -1,7 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { getLeagueInfo, LEAGUES } from '../data/leagues'
 import { subtractSmallestDisplayedUnit } from '../utils/formatPower'
-import { runAutoOptimizer, type AutoOptimizerResult, type OptimizerMode, type OptimizerPriority } from '../utils/autoOptimizer'
+import {
+  roomPowerBreakdownNoTemp,
+  runAutoOptimizer,
+  type AutoOptimizerResult,
+  type OptimizerMode,
+  type OptimizerPriority,
+} from '../utils/autoOptimizer'
 import { useMinerSetsData } from './useMinerSetsData'
 import {
   cloneSimRoomFromReal,
@@ -53,6 +59,26 @@ export function buildLeagueCeilingOptions(formatPower: (v: number) => string): L
 // primeira seleção por ser a opção menos destrutiva (nunca mexe no que já
 // está instalado), não por indicação explícita do pedido original.
 export type RoomTab = 'atual' | 'simulacao'
+
+// Resumo AO VIVO (real vs simRoom atual) -- Prompt 72: antes a caixa de
+// resumo (AutoOptimizerSummary) só existia/atualizava a partir de
+// `result`, que só é escrito dentro de runOptimizer. Isso significava que
+// qualquer edição manual (modal de rack) mudava simRoom de verdade, mas o
+// resumo continuava mostrando o snapshot do último run do otimizador (ou
+// nada, se o otimizador nunca rodou) -- bug real confirmado (usuário
+// reportou "3.810 -> 3.810" mesmo depois de trocar um minerador). Corrigido
+// recalculando `before`/`after` direto de playerData.roomConfig/simRoom a
+// cada render (useMemo), independente de `result` -- `result` continua
+// existindo só pro relatório detalhado de mudanças (AutoOptimizerResults),
+// que é mesmo sobre "o que o ÚLTIMO run do otimizador fez", não sobre
+// edição manual.
+export interface LiveOptimizerSummary {
+  beforeTotal: number
+  afterTotal: number
+  beforeBonusPercent: number
+  afterBonusPercent: number
+  ceilingGhs: number
+}
 
 // Prompt 69: promove a sala simulada de "byproduto efêmero do último run
 // do Auto-Otimizador" pra estado PRÓPRIO, editável manualmente (modal de
@@ -119,6 +145,18 @@ export function useAutoOptimizer(playerData: PlayerData, inventory: EnrichedMine
     setSimRoom((prev) => dismountRackInSim(prev, rackInstanceId))
   }
 
+  const liveSummary: LiveOptimizerSummary = useMemo(() => {
+    const before = roomPowerBreakdownNoTemp(playerData.roomConfig.miners, playerData.roomConfig.racks, setsData)
+    const after = roomPowerBreakdownNoTemp(simRoom.miners, simRoom.racks, setsData)
+    return {
+      beforeTotal: before.total,
+      afterTotal: after.total,
+      beforeBonusPercent: before.bonusPercent,
+      afterBonusPercent: after.bonusPercent,
+      ceilingGhs: leagueCeilingGhs(leagueIndex),
+    }
+  }, [playerData.roomConfig, simRoom, setsData, leagueIndex])
+
   function runOptimizer() {
     const ceilingGhs = leagueCeilingGhs(leagueIndex)
 
@@ -152,6 +190,7 @@ export function useAutoOptimizer(playerData: PlayerData, inventory: EnrichedMine
     setActiveTab,
     simRoom,
     setsData,
+    liveSummary,
     resetSimulation,
     swapMiner,
     removeMiner,

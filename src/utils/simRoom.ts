@@ -101,6 +101,15 @@ function removeOccupantsAt(miners: RoomMinerInstance[], rackInstanceId: string, 
   })
 }
 
+// Bug real corrigido (Prompt 72): um minerador largura-2 SEMPRE começa em
+// x=0 e ocupa a linha inteira (mesma convenção usada em toda parte --
+// buildRows/autoOptimizer.ts, listRackSlots acima). Se a entrada escolhida
+// no seletor for largura-2, normaliza pra x=0 e limpa AS DUAS posições da
+// linha (0 e 1), mesmo que o clique original tenha sido no slot x=1 do
+// par -- sem isso, um largura-2 colocado com x=1 ficava com posição
+// inconsistente (listRackSlots só detecta largura-2 checando x=0, então
+// nunca reconheceria essa instância como "ocupa a linha inteira" de
+// volta, quebrando o render e a contagem de slots).
 export function swapMinerInSim(
   state: SimRoomState,
   rackInstanceId: string,
@@ -109,8 +118,12 @@ export function swapMinerInSim(
   entry: EnrichedMinerEntry,
   setsData: MinerSetsData | null,
 ): SimRoomState {
-  const withoutOccupant = removeOccupantsAt(state.miners, rackInstanceId, x, y)
-  const newMiner = buildMinerFromInventoryEntry(entry, rackInstanceId, x, y, setsData)
+  const isWide = entry.cells === 2
+  const targetX: 0 | 1 = isWide ? 0 : x
+  const withoutOccupant = isWide
+    ? removeOccupantsAt(removeOccupantsAt(state.miners, rackInstanceId, 0, y), rackInstanceId, 1, y)
+    : removeOccupantsAt(state.miners, rackInstanceId, x, y)
+  const newMiner = buildMinerFromInventoryEntry(entry, rackInstanceId, targetX, y, setsData)
   return { ...state, miners: [...withoutOccupant, newMiner] }
 }
 
