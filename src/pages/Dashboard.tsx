@@ -1,7 +1,9 @@
 import { usePlayer } from '../context/PlayerContext'
 import { useNetworkData } from '../context/NetworkDataContext'
+import { useMinerSetsData } from '../hooks/useMinerSetsData'
 import { getLeagueInfo, getNextLeagueImageUrl, proxyImageUrl } from '../data/leagues'
 import { formatPower } from '../utils/formatPower'
+import { calculateRoomPower, sumRoomBonusPercentWithSets } from '../utils/calculatePower'
 import { calculateCoinEarnings, type CoinEarnings } from '../utils/calculateEarnings'
 import { isWithdrawable } from '../data/withdrawable'
 import { COIN_SYMBOL_TO_COINGECKO_ID } from '../services/prices'
@@ -33,6 +35,7 @@ function formatRegistrationDate(iso: string): string {
 export default function Dashboard() {
   const { playerData } = usePlayer()
   const { networkData, prices } = useNetworkData()
+  const setsData = useMinerSetsData()
 
   if (!playerData) {
     return (
@@ -52,12 +55,24 @@ export default function Dashboard() {
   const nextLeagueImageUrl = proxyImageUrl(
     getNextLeagueImageUrl(playerData.currentLeagueImageUrl),
   )
-  // Vem direto de user-power-data (current_power/temp oficiais da API) --
-  // pode divergir por alguns minutos do "Sem Temporário" recalculado
-  // localmente pelo Auto-Otimizador no Simulador (esse usa room-config, que
-  // reflete a sala AO VIVO) logo após uma troca real no jogo. Não é bug,
-  // ver comentário em getPlayerPower (services/api.ts).
-  const powerWithoutTemp = playerData.current_power - playerData.temp
+  // "games" é oficialmente TEMPORÁRIO no RollerCoin (dura 1/3/5/7 dias
+  // conforme nível do PC, categoria separada de "Temporary" mas igualmente
+  // não-permanente) -- confirmado pelo usuário. Por isso "Poder Sem
+  // Temporário" NUNCA pode vir de current_power-temp (esse campo da API já
+  // inclui games) nem somar games manualmente -- precisa ser recalculado
+  // localmente a partir da sala (room-config), com gamesPower=0 e temp=0,
+  // exatamente igual ao Auto-Otimizador (autoOptimizer.ts,
+  // roomPowerBreakdownNoTemp) -- mesma fonte, mesma fórmula, pra bater
+  // entre as duas telas (Prompt 68, corrigindo uma tentativa anterior
+  // errada que tinha ido na direção oposta, somando games em vez de
+  // removê-lo de vez).
+  const powerWithoutTemp = calculateRoomPower(
+    playerData.roomConfig.miners,
+    playerData.roomConfig.racks,
+    0,
+    sumRoomBonusPercentWithSets(playerData.roomConfig.miners, setsData),
+    0,
+  ).total
 
   function priceFor(symbol: string): number | null {
     const coingeckoId = COIN_SYMBOL_TO_COINGECKO_ID[symbol]

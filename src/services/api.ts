@@ -71,17 +71,24 @@ export async function getRoomConfig(avatarId: string): Promise<RoomConfig> {
 // instante -- mas são DOIS sistemas de backend diferentes da RollerCoin,
 // sem garantia de consistência entre si. room-config reflete o estado
 // LIVE da sala (confirmado: refletiu uma troca real segundos depois de
-// aplicada no jogo); user-power-data (current_power/temp/bonus_percent,
-// usado pelo Dashboard e pelo painel esquerdo do Simulador) parece ser
-// um snapshot com cache próprio do lado do RollerCoin, que pode ficar
-// minutos atrasado em relação a uma mudança recente na sala -- SEM campo
-// de timestamp na resposta que confirme o atraso diretamente, mas
-// consistente com o comportamento já documentado na referência ROOMS e
-// com a diferença observada na prática (Auto-Otimizador, que recalcula
-// localmente a partir do room-config AO VIVO via
-// roomPowerBreakdownNoTemp, mostrando um total diferente do Dashboard
-// logo após uma troca real). Não é bug nosso -- é característica do jogo,
-// não corrigível do lado do cliente (só esperar o RollerCoin recalcular).
+// aplicada no jogo); user-power-data (current_power/temp/bonus_percent/
+// max_power, usado pelo Dashboard nos cards "Poder Total"/"Max Power" e
+// pelo painel esquerdo do Simulador) parece ser um snapshot com cache
+// próprio do lado do RollerCoin, que pode ficar minutos atrasado em
+// relação a uma mudança recente na sala -- SEM campo de timestamp na
+// resposta que confirme o atraso diretamente, mas consistente com o
+// comportamento já documentado na referência ROOMS. Não é bug nosso -- é
+// característica do jogo, não corrigível do lado do cliente (só esperar o
+// RollerCoin recalcular).
+//
+// Prompt 68: "Poder Sem Temporário" (Dashboard) e o total do
+// Auto-Otimizador (Simulador) NÃO usam mais current_power/temp -- os dois
+// recalculam localmente a partir do MESMO roomConfig (miners+racks+bônus
+// dedup+set, sem games, ver calculateRoomPower/sumRoomBonusPercentWithSets
+// e Dashboard.tsx), então ficam sincronizados por construção, sem
+// depender do cache de user-power-data. O atraso descrito acima agora só
+// afeta comparações que envolvam current_power/max_power diretamente
+// (ex: "Poder Total" ou "Max Power" do Dashboard vs a sala ao vivo).
 export async function getPlayerPower(nickname: string) {
   const profile = await getPublicProfile(nickname)
   const [powerData, roomConfig] = await Promise.all([
