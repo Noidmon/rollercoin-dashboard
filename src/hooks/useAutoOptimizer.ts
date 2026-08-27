@@ -1,23 +1,37 @@
 import { useState } from 'react'
 import { getLeagueInfo, LEAGUES } from '../data/leagues'
+import { subtractSmallestDisplayedUnit } from '../utils/formatPower'
 import { runAutoOptimizer, type AutoOptimizerResult, type OptimizerMode, type OptimizerPriority } from '../utils/autoOptimizer'
 import type { EnrichedMinerEntry } from './useMinersInventoryImport'
 import type { PlayerData } from '../context/PlayerContext'
 
-// Uma opção de teto de liga -- "Topo de {liga} -- até X" = o piso da
-// PRÓXIMA liga (ficar "um passo antes de subir"). A última liga (sem
-// próxima) não tem teto real no jogo -- representada como Infinity.
+// Uma opção de teto de liga -- "Topo de {liga} -- até X" = 1 passo (na
+// menor casa decimal exibida) ABAIXO do piso da PRÓXIMA liga, nunca o piso
+// em si -- o piso exato da próxima liga JÁ pertence a ela no jogo real
+// (ex: próxima liga em 4.000 Zh/s -> teto real "ficar na atual" é
+// 3.999 Zh/s, confirmado contra a referência real SmartRoom, Prompt 65).
+// A última liga (sem próxima) não tem teto real no jogo -- representada
+// como Infinity.
 export interface LeagueCeilingOption {
   index: number
   label: string
   ceilingGhs: number
 }
 
+// Reaproveitado tanto pelas opções do dropdown quanto pelo cálculo real do
+// teto em runOptimizer -- garante que o valor MOSTRADO e o valor
+// EFETIVAMENTE aplicado na comparação do algoritmo são sempre o mesmo
+// número, nunca dessincronizados.
+export function leagueCeilingGhs(leagueIndex: number): number {
+  const nextLeague = LEAGUES[leagueIndex + 1]
+  return nextLeague ? subtractSmallestDisplayedUnit(nextLeague.min) : Infinity
+}
+
 export function buildLeagueCeilingOptions(formatPower: (v: number) => string): LeagueCeilingOption[] {
   return LEAGUES.map((league, i) => {
-    const next = LEAGUES[i + 1]
-    const ceilingGhs = next ? next.min : Infinity
-    const label = next ? `Topo de ${league.name} — até ${formatPower(ceilingGhs)}` : `${league.name} (sem teto)`
+    const ceilingGhs = leagueCeilingGhs(i)
+    const hasNext = i < LEAGUES.length - 1
+    const label = hasNext ? `Topo de ${league.name} — até ${formatPower(ceilingGhs)}` : `${league.name} (sem teto)`
     return { index: i, label, ceilingGhs }
   })
 }
@@ -29,6 +43,8 @@ export function buildLeagueCeilingOptions(formatPower: (v: number) => string): L
 // default fixo pedido explicitamente -- "Preservar sala" foi escolhido como
 // primeira seleção por ser a opção menos destrutiva (nunca mexe no que já
 // está instalado), não por indicação explícita do pedido original.
+export type RoomTab = 'atual' | 'simulacao'
+
 export function useAutoOptimizer(playerData: PlayerData, inventory: EnrichedMinerEntry[]) {
   const [priority, setPriority] = useState<OptimizerPriority>('padrao')
   const [mode, setMode] = useState<OptimizerMode>('preservar_sala')
@@ -37,10 +53,13 @@ export function useAutoOptimizer(playerData: PlayerData, inventory: EnrichedMine
     return LEAGUES.findIndex((l) => l.name === currentLeague.name)
   })
   const [result, setResult] = useState<AutoOptimizerResult | null>(null)
+  // Aba "Atual"/"Simulação" acima da sala -- muda pra "Simulação"
+  // automaticamente depois de rodar Otimizar (Prompt 65), mas o usuário
+  // pode voltar pra "Atual" manualmente a qualquer momento.
+  const [activeTab, setActiveTab] = useState<RoomTab>('atual')
 
   function runOptimizer() {
-    const nextLeague = LEAGUES[leagueIndex + 1]
-    const ceilingGhs = nextLeague ? nextLeague.min : Infinity
+    const ceilingGhs = leagueCeilingGhs(leagueIndex)
 
     const optimizerResult = runAutoOptimizer({
       mode,
@@ -51,6 +70,7 @@ export function useAutoOptimizer(playerData: PlayerData, inventory: EnrichedMine
       inventory,
     })
     setResult(optimizerResult)
+    setActiveTab('simulacao')
   }
 
   return {
@@ -62,5 +82,7 @@ export function useAutoOptimizer(playerData: PlayerData, inventory: EnrichedMine
     setLeagueIndex,
     result,
     runOptimizer,
+    activeTab,
+    setActiveTab,
   }
 }

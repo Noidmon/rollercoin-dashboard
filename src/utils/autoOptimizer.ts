@@ -22,20 +22,26 @@
 // cada configuração candidata, então recalcular o dedup direto é mais
 // simples e igualmente correto).
 //
-// Arquitetura (Prompt 64, revisada durante os próprios testes): os DOIS
-// modos partem do MESMO ponto -- todo instalado na própria posição
-// original (placeInstalledAtOriginalPositions) + inventário preenchendo os
-// slots vazios remanescentes (runPoderBruto/runPadrao). Preservar sala para
-// exatamente aí. Máximo poder roda um passo extra de TROCA (runSwapPass)
-// em cima desse resultado, tentando substituir o instalado mais fraco pelo
-// candidato de inventário mais forte ainda não colocado, validando cada
-// troca com um recálculo REAL (não o tracker incremental) antes de aceitar.
+// Arquitetura (Prompt 64, revisada durante os próprios testes; loop
+// iterativo substituiu a troca única no Prompt 65): os DOIS modos partem
+// do MESMO ponto -- todo instalado na própria posição original
+// (placeInstalledAtOriginalPositions) + inventário preenchendo os slots
+// vazios remanescentes (runPoderBruto/runPadrao). Preservar sala para
+// exatamente aí. Máximo poder roda uma busca ITERATIVA de melhoria
+// contínua em cima desse resultado (runIterativeImprovement): a cada
+// rodada, procura o melhor movimento entre preencher um slot vazio ou
+// trocar um colocado fraco por um candidato do inventário, valida com
+// recálculo REAL (não o tracker incremental) contra o teto, e repete até
+// não sobrar movimento vantajoso ou bater um limite de segurança de
+// iterações -- não é mais uma troca só (essa versão anterior entregava
+// resultado quase nulo numa sala já cheia mesmo quando várias trocas
+// vantajosas existiam).
 //
-// Isso substitui o design original (tratar TODO instalado como candidato
-// comum, competindo do zero junto com o inventário) -- descartado depois
-// de confirmar com dado real (conta NoID, bônus de coleção real ~3164%)
-// que começar do zero faz a heurística gulosa gastar o "orçamento" de
-// bônus cedo demais em poucos tipos de alto bônus (bônus de coleção
+// Isso substitui o design ainda mais antigo (tratar TODO instalado como
+// candidato comum, competindo do zero junto com o inventário) -- descartado
+// depois de confirmar com dado real (conta NoID, bônus de coleção real
+// ~3164%) que começar do zero faz a heurística gulosa gastar o "orçamento"
+// de bônus cedo demais em poucos tipos de alto bônus (bônus de coleção
 // multiplica o poder TOTAL, então cada tipo novo encarece
 // desproporcionalmente as adições seguintes) e travar no teto antes de
 // sequer conseguir recolocar de volta todo mundo que já estava instalado --
@@ -44,7 +50,7 @@
 // problema por construção: reconstituir a sala como já estava nunca custa
 // nada (já é onde cada um está), e só o que REALMENTE precisa de uma
 // decisão (o que fazer com os slots vazios, e -- só no Máximo poder -- se
-// vale trocar algum instalado fraco) passa pela heurística.
+// vale trocar algum colocado fraco) passa pela heurística.
 import {
   calculateRoomPower,
   sumUniqueMinerBonusPercent,
@@ -139,9 +145,32 @@ export interface OptimizerEmptySlot {
 export interface AutoOptimizerResult {
   beforeTotal: number
   afterTotal: number
+  // Bônus de coleção (dedup) antes/depois -- % em centésimos (convenção
+  // nativa de room-config) e valor em Gh/s (a própria parcela collectionBonus
+  // da fórmula) -- usado pelo resumo da UI (Prompt 65, "Bônus atual ->
+  // estimado").
+  beforeBonusPercent: number
+  afterBonusPercent: number
+  beforeBonusValue: number
+  afterBonusValue: number
+  // Teto efetivamente aplicado (já com a correção de 1 unidade abaixo do
+  // piso da próxima liga) -- devolvido pra UI computar "usando X%, folga Y"
+  // sem duplicar o cálculo.
+  ceilingGhs: number
+  // Array completo (instalados inalterados + mudanças) no MESMO formato de
+  // playerData.roomConfig.miners -- pronto pra alimentar RoomRacksLayer
+  // direto na aba "Simulação" (Prompt 65), sem a UI precisar reconstruir
+  // isso sozinha a partir da lista de mudanças.
+  simulatedMiners: RoomMinerInstance[]
   placements: OptimizerPlacement[]
   removedInstalled: OptimizerRemoved[]
   emptySlots: OptimizerEmptySlot[]
+  // Telemetria da busca iterativa (só preenchida no modo Máximo poder --
+  // Preservar sala não itera, então fica null). iterations = quantas
+  // rodadas de melhoria rodaram de fato; converged=false significa que
+  // bateu no limite de segurança (MAX_ITERATIONS) sem esgotar as trocas
+  // vantajosas -- reportado explicitamente em vez de fingir que convergiu.
+  iterativeSearch: { iterations: number; converged: boolean; elapsedMs: number } | null
 }
 
 export interface AutoOptimizerInput {
@@ -471,6 +500,18 @@ function totalPowerNoTemp(miners: RoomMinerInstance[], racks: Rack[]): number {
   return calculateRoomPower(miners, racks, 0, bonusPercent, 0).total
 }
 
+// Versão com o detalhamento de bônus (% e valor) -- usada só nos pontos
+// ANTES/DEPOIS finais (não durante a busca, que só precisa do total via
+// totalPowerNoTemp) pro resumo da UI (Prompt 65: "Bônus atual -> estimado").
+function roomPowerBreakdownNoTemp(
+  miners: RoomMinerInstance[],
+  racks: Rack[],
+): { total: number; bonusPercent: number; bonusValue: number } {
+  const bonusPercent = sumUniqueMinerBonusPercent(miners)
+  const breakdown = calculateRoomPower(miners, racks, 0, bonusPercent, 0)
+  return { total: breakdown.total, bonusPercent, bonusValue: breakdown.collectionBonus }
+}
+
 function placementFromInventoryCandidateAt(candidate: Candidate, at: OptimizerPlacement): OptimizerPlacement {
   return {
     instanceKey: candidate.instanceKey,
@@ -490,82 +531,141 @@ function placementFromInventoryCandidateAt(candidate: Candidate, at: OptimizerPl
   }
 }
 
-// Passo de troca, só pro modo Máximo poder -- roda DEPOIS de preencher os
-// slots vazios com o inventário (igual ao Preservar sala até esse ponto).
-// Sem isso, uma sala já 100% cheia (ou com bônus de coleção já muito alto)
-// nunca teria como melhorar no modo Máximo poder, mesmo quando trocar um
-// instalado fraco por um candidato forte do inventário claramente
-// compensaria -- confirmado com dado real da conta NoID (sala 100%
-// ocupada, bônus de coleção real ~3164%) durante os testes (Prompt 64).
-//
-// Busca gulosa limitada (não exaustiva): a cada rodada, tenta parear o
-// instalado MAIS FRACO ainda colocado com o candidato do inventário MAIS
-// FORTE ainda não colocado, do MESMO tamanho de célula -- valida a troca
-// com um recálculo REAL (calculateRoomPower, não o tracker incremental)
-// antes de aceitar, garantindo que nunca ultrapassa o teto e (na
-// prioridade Padrão) que o total realmente melhora, não só o poder bruto
-// da peça isolada. Repete até não sobrar troca válida.
-function runSwapPass(
-  placements: OptimizerPlacement[],
-  remainingInventory: Candidate[],
+export interface IterativeImprovementResult {
+  placements: OptimizerPlacement[]
+  iterations: number
+  converged: boolean
+  elapsedMs: number
+}
+
+// Limite de segurança de iterações (Prompt 65) -- se bater nisso, reporta
+// não-convergência em vez de fingir que terminou (sinal de que precisaria
+// de outra abordagem, não de rodar mais um pouco).
+const MAX_ITERATIONS = 700
+// Corta a busca por rodada a um subconjunto -- com 500+ candidatos de
+// inventário e ~200 instalados, testar TODO par a cada rodada (centenas de
+// milhares de recálculos completos de calculateRoomPower) seria caro
+// demais. Considera só os N candidatos do inventário de MAIOR poder-base
+// ainda não usados (são os que mais provavelmente valem uma troca) contra
+// os M colocados de MENOR poder (os mais prováveis de valer trocar) --
+// documentado aqui em vez de escondido: é uma heurística, não busca
+// exaustiva.
+const TOP_K_INVENTORY = 40
+const BOTTOM_K_PLACED = 40
+
+type Move =
+  | { kind: 'fill'; row: WorkingRow; candidate: Candidate; total: number }
+  | { kind: 'swap'; oldP: OptimizerPlacement; candidate: Candidate; total: number }
+
+// Agrupa linhas com o MESMO perfil (bônus de rack + quantas células livres)
+// -- pra decidir SE vale preencher uma célula vazia com um candidato, só o
+// perfil importa (poder resultante é idêntico pra qualquer linha do mesmo
+// perfil), então testar 1 representante por perfil em vez de toda linha
+// individualmente corta a busca de preenchimento de ~centenas de linhas
+// pra só um punhado de perfis distintos, sem perder nenhuma opção real.
+function representativeRowsByProfile(rows: WorkingRow[]): WorkingRow[] {
+  const seen = new Map<string, WorkingRow>()
+  for (const row of rows) {
+    if (row.freeXs.length === 0) continue
+    const key = `${row.rackBonus}:${row.freeXs.length}`
+    if (!seen.has(key)) seen.set(key, row)
+  }
+  return [...seen.values()]
+}
+
+// Melhoria iterativa contínua, só pro modo Máximo poder -- substitui a
+// versão anterior de "1 troca bounded" (Prompt 64), que entregava resultado
+// quase nulo numa sala já cheia com bônus de coleção alto (a proteção
+// contra o bug multiplicativo funcionava, mas só tentava UMA troca por
+// execução em vez de continuar buscando). Ponto de partida continua "tudo
+// onde já está" (mesma proteção). A cada rodada, procura o melhor movimento
+// entre PREENCHER um slot vazio ou TROCAR um colocado fraco por um
+// candidato do inventário, valida com recálculo REAL (calculateRoomPower,
+// não estimativa incremental) contra o teto E contra o total atual antes
+// de aceitar, e repete até não sobrar movimento vantajoso ou bater o limite
+// de segurança (ver MAX_ITERATIONS).
+function runIterativeImprovement(
+  rows: WorkingRow[],
+  initialPlacements: OptimizerPlacement[],
+  initialRemainingInventory: Candidate[],
   racks: Rack[],
   ceilingGhs: number,
   priority: OptimizerPriority,
-): OptimizerPlacement[] {
-  let current = [...placements]
-  let remaining = [...remainingInventory]
+): IterativeImprovementResult {
+  const startedAt = Date.now()
+  let current = [...initialPlacements]
+  let remaining = [...initialRemainingInventory]
+  let currentTotal = totalPowerNoTemp(buildFinalMiners(current), racks)
 
-  for (;;) {
-    const removableInstalled = current.filter((p) => p.origin === 'installed').sort((a, b) => a.power - b.power)
-    if (removableInstalled.length === 0 || remaining.length === 0) break
+  let iterations = 0
+  let converged = false
 
-    const addableByCells = new Map<1 | 2, Candidate[]>()
-    for (const c of remaining) {
-      const list = addableByCells.get(c.cells) ?? []
-      list.push(c)
-      addableByCells.set(c.cells, list)
-    }
-    for (const list of addableByCells.values()) list.sort((a, b) => b.power - a.power)
-
-    const currentTotal = totalPowerNoTemp(buildFinalMiners(current), racks)
-
-    let best: { oldP: OptimizerPlacement; newC: Candidate; newTotal: number } | null = null
-
-    for (const oldP of removableInstalled) {
-      const newC = addableByCells.get(oldP.cells)?.[0]
-      if (!newC) continue
-
-      // Filtro rápido antes do recálculo caro: na prioridade Poder Bruto a
-      // troca só faz sentido se o poder BRUTO da peça nova é maior (regra
-      // consistente com o resto dessa prioridade -- decide só pelo poder
-      // isolado, ignora efeito de bônus). Na Padrão, qualquer par passa
-      // pro recálculo real, que decide pelo total.
-      if (priority === 'poder_bruto' && newC.power <= oldP.power) continue
-
-      const withoutOld = current.filter((p) => p !== oldP)
-      const swapped = [...withoutOld, placementFromInventoryCandidateAt(newC, oldP)]
-      const newTotal = totalPowerNoTemp(buildFinalMiners(swapped), racks)
-
-      if (newTotal > ceilingGhs) continue
-      if (priority === 'padrao' && newTotal <= currentTotal) continue
-
-      if (!best || newTotal > best.newTotal) best = { oldP, newC, newTotal }
+  for (; iterations < MAX_ITERATIONS; iterations++) {
+    if (remaining.length === 0) {
+      converged = true
+      break
     }
 
-    if (!best) break
+    const topInventory = [...remaining].sort((a, b) => b.power - a.power).slice(0, TOP_K_INVENTORY)
+    const fillRows = representativeRowsByProfile(rows)
+    const weakestPlaced = [...current].sort((a, b) => a.power - b.power).slice(0, BOTTOM_K_PLACED)
 
-    current = current.filter((p) => p !== best!.oldP)
-    current.push(placementFromInventoryCandidateAt(best.newC, best.oldP))
-    remaining = remaining.filter((c) => c.instanceKey !== best!.newC.instanceKey)
+    let best: Move | null = null
+
+    // Opção A -- preencher um slot vazio (1 linha representante por perfil
+    // de bônus+capacidade, ver representativeRowsByProfile).
+    for (const row of fillRows) {
+      for (const cand of topInventory) {
+        if (cand.cells > row.freeXs.length) continue
+        if (cand.cells === 2 && row.freeXs.length !== 2) continue
+
+        const trial = [...current, placementFromCandidate(cand, row, 0)]
+        const total = totalPowerNoTemp(buildFinalMiners(trial), racks)
+        if (total > ceilingGhs || total <= currentTotal) continue
+        if (!best || total > best.total) best = { kind: 'fill', row, candidate: cand, total }
+      }
+    }
+
+    // Opção B -- trocar um colocado fraco (instalado OU já preenchido pelo
+    // inventário numa rodada anterior) por um candidato mais forte.
+    for (const oldP of weakestPlaced) {
+      for (const cand of topInventory) {
+        if (cand.cells !== oldP.cells) continue
+        // Mesma regra de prioridade já usada no resto do algoritmo: Poder
+        // Bruto só considera a troca se o poder ISOLADO aumenta (ignora
+        // efeito de bônus na escolha); Padrão deixa qualquer par passar
+        // pro recálculo real, que decide pelo total.
+        if (priority === 'poder_bruto' && cand.power <= oldP.power) continue
+
+        const trial = [...current.filter((p) => p !== oldP), placementFromInventoryCandidateAt(cand, oldP)]
+        const total = totalPowerNoTemp(buildFinalMiners(trial), racks)
+        if (total > ceilingGhs || total <= currentTotal) continue
+        if (!best || total > best.total) best = { kind: 'swap', oldP, candidate: cand, total }
+      }
+    }
+
+    if (!best) {
+      converged = true
+      break
+    }
+
+    if (best.kind === 'fill') {
+      const x = takeFreeX(best.row, best.candidate.cells)
+      current = [...current, placementFromCandidate(best.candidate, best.row, x)]
+    } else {
+      current = [...current.filter((p) => p !== best!.oldP), placementFromInventoryCandidateAt(best.candidate, best.oldP)]
+    }
+    remaining = remaining.filter((c) => c.instanceKey !== best!.candidate.instanceKey)
+    currentTotal = best.total
   }
 
-  return current
+  return { placements: current, iterations, converged, elapsedMs: Date.now() - startedAt }
 }
 
 export function runAutoOptimizer(input: AutoOptimizerInput): AutoOptimizerResult {
   const { mode, priority, ceilingGhs, installedMiners, racks, inventory } = input
 
-  const beforeTotal = totalPowerNoTemp(installedMiners, racks)
+  const before = roomPowerBreakdownNoTemp(installedMiners, racks)
   const installedWithPlacement = installedMiners.filter(hasValidPlacement)
 
   // Base comum aos dois modos: TODO instalado começa na própria posição
@@ -580,10 +680,21 @@ export function runAutoOptimizer(input: AutoOptimizerInput): AutoOptimizerResult
   // volta todo mundo que já estava instalado, mesmo quando o total real de
   // TODOS eles juntos caberia folgado).
   const baseRows = buildRows(racks)
+  // Capacidade FÍSICA TOTAL da sala (2 células por linha, sempre) --
+  // capturada ANTES de ocupar com os instalados, porque o modo Máximo
+  // poder pode trocar candidatos do inventário por instalados já
+  // colocados (runIterativeImprovement), não só preencher espaço LIVRE.
+  // Bug real encontrado testando com dado real (sala 100% ocupada, 0
+  // células livres): capar buildInventoryCandidates pela capacidade LIVRE
+  // (sempre 0 nesse cenário) zerava o pool de candidatos inteiro antes da
+  // busca de troca sequer começar -- capar pela capacidade TOTAL corrige
+  // isso sem soltar candidatos além do que a sala poderia fisicamente usar
+  // em QUALQUER arranjo (preenchimento ou troca).
+  const totalCapacityCells = baseRows.reduce((sum, r) => sum + r.freeXs.length, 0)
+  const inventoryCandidates = buildInventoryCandidates(inventory, totalCapacityCells)
+
   const baseTracker = new RoomPowerTracker()
   const installedPlacements = placeInstalledAtOriginalPositions(baseRows, installedWithPlacement, baseTracker)
-  const totalFreeCells = baseRows.reduce((sum, r) => sum + r.freeXs.length, 0)
-  const inventoryCandidates = buildInventoryCandidates(inventory, totalFreeCells)
 
   // Preenche os slots VAZIOS remanescentes com o inventário -- igual pros
   // dois modos (Preservar sala para por aqui; Máximo poder ainda tenta um
@@ -614,15 +725,29 @@ export function runAutoOptimizer(input: AutoOptimizerInput): AutoOptimizerResult
 
   let finalPlacements = [...installedPlacements, ...fillPlacements]
   const finalRows = fillRows
+  let iterativeSearch: AutoOptimizerResult['iterativeSearch'] = null
 
   if (mode === 'maximo_poder') {
     const placedInventoryKeys = new Set(fillPlacements.map((p) => p.instanceKey))
     const remainingInventory = inventoryCandidates.filter((c) => !placedInventoryKeys.has(c.instanceKey))
-    finalPlacements = runSwapPass(finalPlacements, remainingInventory, racks, ceilingGhs, priority)
+    const improvement = runIterativeImprovement(
+      finalRows,
+      finalPlacements,
+      remainingInventory,
+      racks,
+      ceilingGhs,
+      priority,
+    )
+    finalPlacements = improvement.placements
+    iterativeSearch = {
+      iterations: improvement.iterations,
+      converged: improvement.converged,
+      elapsedMs: improvement.elapsedMs,
+    }
   }
 
   const finalMiners = buildFinalMiners(finalPlacements)
-  const afterTotal = totalPowerNoTemp(finalMiners, racks)
+  const after = roomPowerBreakdownNoTemp(finalMiners, racks)
 
   const changedPlacements = finalPlacements.filter((p) => !p.unchanged)
 
@@ -661,10 +786,17 @@ export function runAutoOptimizer(input: AutoOptimizerInput): AutoOptimizerResult
   }
 
   return {
-    beforeTotal,
-    afterTotal,
+    beforeTotal: before.total,
+    afterTotal: after.total,
+    beforeBonusPercent: before.bonusPercent,
+    afterBonusPercent: after.bonusPercent,
+    beforeBonusValue: before.bonusValue,
+    afterBonusValue: after.bonusValue,
+    ceilingGhs,
+    simulatedMiners: finalMiners,
     placements: changedPlacements,
     removedInstalled,
     emptySlots,
+    iterativeSearch,
   }
 }

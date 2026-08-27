@@ -2,11 +2,12 @@ import Card from './Card'
 import { formatPower } from '../utils/formatPower'
 import type { AutoOptimizerResult } from '../utils/autoOptimizer'
 
-// Resultado do Auto-Otimizador -- sempre PREVIEW local (nunca persiste,
-// nunca altera o room-config real). Renderizado como card próprio, cheio
-// da largura, abaixo da sala (mesmo padrão do painel de inventário
-// importado -- controles compactos no stats panel, resultado full-width
-// abaixo dele).
+// Detalhe COMPLEMENTAR do resultado (Prompt 65) -- a entrega principal
+// agora é a visualização da sala em si (aba "Simulação", ver
+// AutoOptimizerSummary + RoomRacksLayer com result.simulatedMiners); esse
+// card só lista o "porquê" em texto (quais mudaram, o que ficou vazio e
+// por quê), sem repetir antes/depois/diferença (já mostrado no resumo
+// acima da sala).
 function RackLabel({
   rackName,
   roomLevel,
@@ -28,36 +29,21 @@ function RackLabel({
 export default function AutoOptimizerResults({ result }: { result: AutoOptimizerResult | null }) {
   if (!result) return null
 
-  const delta = result.afterTotal - result.beforeTotal
-  const deltaSign = delta >= 0 ? '+' : ''
-  const deltaColor = delta > 0 ? 'text-emerald-400' : delta < 0 ? 'text-red-400' : 'text-slate-400'
-
   const added = result.placements.filter((p) => p.origin === 'inventory')
   const movedInstalled = result.placements.filter((p) => p.origin === 'installed')
 
   return (
-    <Card title="Resultado do Auto-Otimizador" className="mt-4">
-      <p className="mb-3 text-[11px] text-slate-500">
-        Simulação local -- nada foi salvo. Aplique manualmente no jogo se quiser.
-      </p>
-
-      <div className="grid grid-cols-3 gap-3 rounded-md border border-slate-800 bg-slate-950/40 p-3">
-        <div>
-          <p className="text-xs text-slate-400">Antes</p>
-          <p className="text-sm font-semibold text-slate-200">{formatPower(result.beforeTotal)}</p>
-        </div>
-        <div>
-          <p className="text-xs text-slate-400">Depois</p>
-          <p className="text-sm font-semibold text-slate-200">{formatPower(result.afterTotal)}</p>
-        </div>
-        <div>
-          <p className="text-xs text-slate-400">Diferença</p>
-          <p className={`text-sm font-semibold ${deltaColor}`}>
-            {deltaSign}
-            {formatPower(delta)}
-          </p>
-        </div>
-      </div>
+    <Card title="Detalhes da Simulação" className="mt-4">
+      {result.iterativeSearch && (
+        <p className="mb-3 text-[11px] text-slate-500">
+          Busca iterativa (Máximo poder): {result.iterativeSearch.iterations} iteração
+          {result.iterativeSearch.iterations === 1 ? '' : 'ões'}
+          {result.iterativeSearch.converged
+            ? ', convergiu'
+            : ' -- bateu o limite de segurança sem convergir, pode haver mais espaço pra melhorar'}
+          {' '}em {result.iterativeSearch.elapsedMs}ms.
+        </p>
+      )}
 
       {added.length > 0 && (
         <div className="mt-3">

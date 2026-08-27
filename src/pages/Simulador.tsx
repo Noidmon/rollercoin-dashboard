@@ -8,14 +8,15 @@ import RoomRacksLayer from '../components/RoomRacksLayer'
 import RoomInventoryPanel from '../components/RoomInventoryPanel'
 import InventoryPasteField from '../components/InventoryPasteField'
 import AutoOptimizerControls from '../components/AutoOptimizerControls'
+import AutoOptimizerSummary from '../components/AutoOptimizerSummary'
 import AutoOptimizerResults from '../components/AutoOptimizerResults'
 import ScaledRoomCanvas from '../components/ScaledRoomCanvas'
 import LeagueBadge from '../components/LeagueBadge'
 import { roomConfigToRackPlacements } from '../utils/roomLayout'
 import { useMinersInventoryImport } from '../hooks/useMinersInventoryImport'
-import { useAutoOptimizer } from '../hooks/useAutoOptimizer'
+import { useAutoOptimizer, type RoomTab } from '../hooks/useAutoOptimizer'
 import type { PlayerData } from '../context/PlayerContext'
-import type { OptimizerMode, OptimizerPriority } from '../utils/autoOptimizer'
+import type { AutoOptimizerResult, OptimizerMode, OptimizerPriority } from '../utils/autoOptimizer'
 
 interface OptimizerControlsProps {
   priority: OptimizerPriority
@@ -35,8 +36,9 @@ const ROOM_LEVELS = [0, 1, 2, 3]
 
 // Painel de stats ao lado da sala -- mesmos dados já exibidos no Dashboard
 // (poder atual, progresso de liga), reaproveitados aqui em vez de
-// recalculados, seguindo a composição da referência (painel + sala lado a
-// lado, não cards separados empilhados).
+// recalculados. O Auto-Otimizador NÃO fica mais aqui (Prompt 65) -- foi
+// pro lado direito da sala, ao lado do visual (ver AutoOptimizerControls em
+// RoomVisualization). Só o campo de colar inventário continua neste painel.
 function RoomStatsPanel({
   playerData,
   pasteText,
@@ -44,7 +46,6 @@ function RoomStatsPanel({
   onImport,
   unrecognizedCount,
   recognizedCount,
-  optimizer,
 }: {
   playerData: PlayerData
   pasteText: string
@@ -52,7 +53,6 @@ function RoomStatsPanel({
   onImport: () => void
   unrecognizedCount: number | null
   recognizedCount: number
-  optimizer: OptimizerControlsProps
 }) {
   const { currentLeague, nextLeague, powerNeeded, progressPercent } = getLeagueInfo(
     playerData.max_power,
@@ -110,17 +110,51 @@ function RoomStatsPanel({
         unrecognizedCount={unrecognizedCount}
         recognizedCount={recognizedCount}
       />
+    </div>
+  )
+}
 
-      <AutoOptimizerControls
-        priority={optimizer.priority}
-        onPriorityChange={optimizer.setPriority}
-        mode={optimizer.mode}
-        onModeChange={optimizer.setMode}
-        leagueIndex={optimizer.leagueIndex}
-        onLeagueIndexChange={optimizer.setLeagueIndex}
-        onOptimize={optimizer.runOptimizer}
-        disabled={optimizer.disabled}
-      />
+// Abas "Atual"/"Simulação" acima da sala visual -- referência real
+// (SmartRoom, Prompt 65). "Simulação" só fica clicável depois de rodar o
+// Auto-Otimizador ao menos uma vez (sem resultado ainda, não tem o que
+// mostrar).
+function RoomTabs({
+  activeTab,
+  onTabChange,
+  hasResult,
+}: {
+  activeTab: RoomTab
+  onTabChange: (tab: RoomTab) => void
+  hasResult: boolean
+}) {
+  return (
+    <div className="flex gap-2">
+      <button
+        type="button"
+        onClick={() => onTabChange('atual')}
+        className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+          activeTab === 'atual'
+            ? 'bg-indigo-600 text-white'
+            : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+        }`}
+      >
+        📌 Atual
+      </button>
+      <button
+        type="button"
+        onClick={() => hasResult && onTabChange('simulacao')}
+        disabled={!hasResult}
+        title={hasResult ? undefined : 'Rode o Auto-Otimizador primeiro'}
+        className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+          !hasResult
+            ? 'cursor-not-allowed bg-slate-800/60 text-slate-600'
+            : activeTab === 'simulacao'
+              ? 'bg-indigo-600 text-white'
+              : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+        }`}
+      >
+        ✨ Simulação
+      </button>
     </div>
   )
 }
@@ -128,7 +162,9 @@ function RoomStatsPanel({
 // Visual real da sala: fundo (RoomBackground) + racks/mineradores reais da
 // conta (RoomRacksLayer) sobrepostos no mesmo container, escalado pra
 // largura real disponível (ScaledRoomCanvas). Botões 1-4 na lateral trocam
-// qual sala é exibida -- só uma por vez.
+// qual sala é exibida -- só uma por vez. Aba "Simulação" troca só os
+// MINERS renderizados (result.simulatedMiners) -- os racks nunca mudam de
+// posição, só quem está posicionado neles.
 function RoomVisualization({
   playerData,
   pasteText,
@@ -137,6 +173,9 @@ function RoomVisualization({
   unrecognizedCount,
   recognizedCount,
   optimizer,
+  result,
+  activeTab,
+  onTabChange,
 }: {
   playerData: PlayerData
   pasteText: string
@@ -145,6 +184,9 @@ function RoomVisualization({
   unrecognizedCount: number | null
   recognizedCount: number
   optimizer: OptimizerControlsProps
+  result: AutoOptimizerResult | null
+  activeTab: RoomTab
+  onTabChange: (tab: RoomTab) => void
 }) {
   const placements = roomConfigToRackPlacements(playerData.roomConfig)
   const unlockedLevels = new Set(placements.map((p) => p.roomLevel))
@@ -160,6 +202,8 @@ function RoomVisualization({
   }
 
   const racksInSelectedLevel = placements.filter((p) => p.roomLevel === selectedLevel)
+  const showingSimulation = activeTab === 'simulacao' && result !== null
+  const displayMiners = showingSimulation ? result!.simulatedMiners : playerData.roomConfig.miners
 
   return (
     <Card title="Sala">
@@ -171,44 +215,67 @@ function RoomVisualization({
           onImport={onImport}
           unrecognizedCount={unrecognizedCount}
           recognizedCount={recognizedCount}
-          optimizer={optimizer}
         />
 
-        <div className="flex min-w-0 flex-1 items-start gap-3">
-          <div className="flex shrink-0 flex-col gap-2">
-            {ROOM_LEVELS.map((level) => {
-              const unlocked = unlockedLevels.has(level)
-              return (
-                <button
-                  key={level}
-                  type="button"
-                  disabled={!unlocked}
-                  onClick={() => setSelectedLevel(level)}
-                  title={unlocked ? `Sala ${level}` : 'Sala não desbloqueada'}
-                  className={`flex h-10 w-10 items-center justify-center rounded-md border text-sm font-bold transition ${
-                    !unlocked
-                      ? 'cursor-not-allowed border-slate-800 text-slate-700'
-                      : selectedLevel === level
-                        ? 'border-indigo-400 bg-indigo-600 text-white'
-                        : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
-                  }`}
-                >
-                  {level + 1}
-                </button>
-              )
-            })}
-          </div>
+        <div className="flex min-w-0 flex-1 flex-col gap-3">
+          <RoomTabs activeTab={activeTab} onTabChange={onTabChange} hasResult={result !== null} />
 
-          <div className="min-w-0 flex-1">
-            <p className="mb-2 text-xs text-slate-400">
-              Sala {selectedLevel} ({racksInSelectedLevel.length} racks)
-            </p>
-            <ScaledRoomCanvas>
-              <RoomBackground roomLevel={selectedLevel} />
-              <RoomRacksLayer placements={racksInSelectedLevel} miners={playerData.roomConfig.miners} />
-            </ScaledRoomCanvas>
+          {showingSimulation && (
+            <>
+              <AutoOptimizerSummary result={result!} currentPowerWithTemp={playerData.current_power} />
+              <p className="text-[11px] text-slate-500">
+                Simulação local -- nada foi salvo. Aplique manualmente no jogo se quiser.
+              </p>
+            </>
+          )}
+
+          <div className="flex items-start gap-3">
+            <div className="flex shrink-0 flex-col gap-2">
+              {ROOM_LEVELS.map((level) => {
+                const unlocked = unlockedLevels.has(level)
+                return (
+                  <button
+                    key={level}
+                    type="button"
+                    disabled={!unlocked}
+                    onClick={() => setSelectedLevel(level)}
+                    title={unlocked ? `Sala ${level}` : 'Sala não desbloqueada'}
+                    className={`flex h-10 w-10 items-center justify-center rounded-md border text-sm font-bold transition ${
+                      !unlocked
+                        ? 'cursor-not-allowed border-slate-800 text-slate-700'
+                        : selectedLevel === level
+                          ? 'border-indigo-400 bg-indigo-600 text-white'
+                          : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    {level + 1}
+                  </button>
+                )
+              })}
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <p className="mb-2 text-xs text-slate-400">
+                Sala {selectedLevel} ({racksInSelectedLevel.length} racks)
+              </p>
+              <ScaledRoomCanvas>
+                <RoomBackground roomLevel={selectedLevel} />
+                <RoomRacksLayer placements={racksInSelectedLevel} miners={displayMiners} />
+              </ScaledRoomCanvas>
+            </div>
           </div>
         </div>
+
+        <AutoOptimizerControls
+          priority={optimizer.priority}
+          onPriorityChange={optimizer.setPriority}
+          mode={optimizer.mode}
+          onModeChange={optimizer.setMode}
+          leagueIndex={optimizer.leagueIndex}
+          onLeagueIndexChange={optimizer.setLeagueIndex}
+          onOptimize={optimizer.runOptimizer}
+          disabled={optimizer.disabled}
+        />
       </div>
     </Card>
   )
@@ -243,6 +310,9 @@ function SimuladorContent({ playerData }: { playerData: PlayerData }) {
           unrecognizedCount={unrecognizedCount}
           recognizedCount={entries.length}
           optimizer={optimizer}
+          result={optimizerState.result}
+          activeTab={optimizerState.activeTab}
+          onTabChange={optimizerState.setActiveTab}
         />
       </div>
 
