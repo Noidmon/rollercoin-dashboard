@@ -9,10 +9,16 @@ export default function SortDropdown<T extends string>({
   options,
   value,
   onChange,
+  // Opcional -- permite forçar o botão a ocupar a largura do container
+  // (ex: "w-full truncate") em espaços estreitos como o painel de stats do
+  // Simulador, sem afetar os outros usos (Merges, Mineradores, etc, que
+  // continuam com a largura natural pelo conteúdo).
+  buttonClassName = '',
 }: {
   options: SortDropdownOption<T>[]
   value: T
   onChange: (value: T) => void
+  buttonClassName?: string
 }) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -34,9 +40,9 @@ export default function SortDropdown<T extends string>({
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="flex items-center gap-2 rounded-md border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-200 hover:text-white"
+        className={`flex items-center gap-2 rounded-md border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-200 hover:text-white ${buttonClassName}`}
       >
-        {activeOption?.label}
+        <span className={buttonClassName.includes('truncate') ? 'truncate' : ''}>{activeOption?.label}</span>
         <svg
           viewBox="0 0 20 20"
           fill="currentColor"
@@ -51,7 +57,7 @@ export default function SortDropdown<T extends string>({
       </button>
 
       {open && (
-        <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-md border border-slate-700 bg-slate-800 shadow-lg">
+        <div className="absolute right-0 z-20 mt-1 w-64 overflow-hidden rounded-md border border-slate-700 bg-slate-800 shadow-lg">
           {options.map((option) => (
             <button
               key={option.value}

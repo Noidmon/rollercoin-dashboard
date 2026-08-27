@@ -1,11 +1,17 @@
 import { useEffect, useState } from 'react'
 import { parseMinersInventory } from '../utils/parseMinersInventory'
 import { buildMinersByNormalizedNameMap, resolveMinerLevel } from '../utils/matchMinersInventory'
-import { getMinerBonusAtLevel, getMinerPowerAtLevel } from '../utils/minerMergeCalculator'
+import { getMinerBonusAtLevel, getMinerPowerAtLevel, getRoomDedupMinerId } from '../utils/minerMergeCalculator'
 import type { MinersData, Miner } from '../types/miner'
 
 export interface EnrichedMinerEntry {
   key: string
+  // Id de dedup pro bônus de coleção -- MESMA convenção usada pelo
+  // miner_id real de room-config (id base no nível 0, merges[].mergeId em
+  // qualquer outro nível -- ver getRoomDedupMinerId). Necessário pro
+  // Auto-Otimizador casar tipos entre inventário colado e sala real na
+  // hora de decidir se uma cópia nova soma bônus de coleção extra ou não.
+  roomDedupMinerId: string
   name: string
   power: number
   bonus: number
@@ -67,6 +73,7 @@ export function useMinersInventoryImport() {
       const miner: Miner = resolved.miner
       next.push({
         key: `${miner.id}-${resolved.matchedLevel}-${index}`,
+        roomDedupMinerId: getRoomDedupMinerId(miner, resolved.matchedLevel),
         name: miner.name,
         power: getMinerPowerAtLevel(miner, resolved.matchedLevel),
         bonus: getMinerBonusAtLevel(miner, resolved.matchedLevel),

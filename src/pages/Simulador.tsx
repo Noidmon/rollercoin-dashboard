@@ -7,11 +7,26 @@ import RoomBackground from '../components/RoomBackground'
 import RoomRacksLayer from '../components/RoomRacksLayer'
 import RoomInventoryPanel from '../components/RoomInventoryPanel'
 import InventoryPasteField from '../components/InventoryPasteField'
+import AutoOptimizerControls from '../components/AutoOptimizerControls'
+import AutoOptimizerResults from '../components/AutoOptimizerResults'
 import ScaledRoomCanvas from '../components/ScaledRoomCanvas'
 import LeagueBadge from '../components/LeagueBadge'
 import { roomConfigToRackPlacements } from '../utils/roomLayout'
 import { useMinersInventoryImport } from '../hooks/useMinersInventoryImport'
+import { useAutoOptimizer } from '../hooks/useAutoOptimizer'
 import type { PlayerData } from '../context/PlayerContext'
+import type { OptimizerMode, OptimizerPriority } from '../utils/autoOptimizer'
+
+interface OptimizerControlsProps {
+  priority: OptimizerPriority
+  setPriority: (v: OptimizerPriority) => void
+  mode: OptimizerMode
+  setMode: (v: OptimizerMode) => void
+  leagueIndex: number
+  setLeagueIndex: (v: number) => void
+  runOptimizer: () => void
+  disabled: boolean
+}
 
 // A RollerCoin permite até 4 salas por conta (níveis 0-3) -- os 4 botões
 // aparecem sempre, mesmo pras salas que a conta ainda não desbloqueou
@@ -29,6 +44,7 @@ function RoomStatsPanel({
   onImport,
   unrecognizedCount,
   recognizedCount,
+  optimizer,
 }: {
   playerData: PlayerData
   pasteText: string
@@ -36,6 +52,7 @@ function RoomStatsPanel({
   onImport: () => void
   unrecognizedCount: number | null
   recognizedCount: number
+  optimizer: OptimizerControlsProps
 }) {
   const { currentLeague, nextLeague, powerNeeded, progressPercent } = getLeagueInfo(
     playerData.max_power,
@@ -93,6 +110,17 @@ function RoomStatsPanel({
         unrecognizedCount={unrecognizedCount}
         recognizedCount={recognizedCount}
       />
+
+      <AutoOptimizerControls
+        priority={optimizer.priority}
+        onPriorityChange={optimizer.setPriority}
+        mode={optimizer.mode}
+        onModeChange={optimizer.setMode}
+        leagueIndex={optimizer.leagueIndex}
+        onLeagueIndexChange={optimizer.setLeagueIndex}
+        onOptimize={optimizer.runOptimizer}
+        disabled={optimizer.disabled}
+      />
     </div>
   )
 }
@@ -108,6 +136,7 @@ function RoomVisualization({
   onImport,
   unrecognizedCount,
   recognizedCount,
+  optimizer,
 }: {
   playerData: PlayerData
   pasteText: string
@@ -115,6 +144,7 @@ function RoomVisualization({
   onImport: () => void
   unrecognizedCount: number | null
   recognizedCount: number
+  optimizer: OptimizerControlsProps
 }) {
   const placements = roomConfigToRackPlacements(playerData.roomConfig)
   const unlockedLevels = new Set(placements.map((p) => p.roomLevel))
@@ -141,6 +171,7 @@ function RoomVisualization({
           onImport={onImport}
           unrecognizedCount={unrecognizedCount}
           recognizedCount={recognizedCount}
+          optimizer={optimizer}
         />
 
         <div className="flex min-w-0 flex-1 items-start gap-3">
@@ -183,20 +214,20 @@ function RoomVisualization({
   )
 }
 
-export default function Simulador() {
-  const { playerData } = usePlayer()
+function SimuladorContent({ playerData }: { playerData: PlayerData }) {
   const { pasteText, setPasteText, entries, unrecognizedCount, handleImport } =
     useMinersInventoryImport()
+  const optimizerState = useAutoOptimizer(playerData, entries)
 
-  if (!playerData) {
-    return (
-      <div>
-        <h1 className="text-2xl font-semibold text-white">Simulador</h1>
-        <p className="mt-4 text-sm text-slate-400">
-          Digite um nickname no menu lateral para começar.
-        </p>
-      </div>
-    )
+  const optimizer: OptimizerControlsProps = {
+    priority: optimizerState.priority,
+    setPriority: optimizerState.setPriority,
+    mode: optimizerState.mode,
+    setMode: optimizerState.setMode,
+    leagueIndex: optimizerState.leagueIndex,
+    setLeagueIndex: optimizerState.setLeagueIndex,
+    runOptimizer: optimizerState.runOptimizer,
+    disabled: entries.length === 0,
   }
 
   return (
@@ -211,10 +242,30 @@ export default function Simulador() {
           onImport={handleImport}
           unrecognizedCount={unrecognizedCount}
           recognizedCount={entries.length}
+          optimizer={optimizer}
         />
       </div>
+
+      <AutoOptimizerResults result={optimizerState.result} />
 
       <RoomInventoryPanel entries={entries} />
     </div>
   )
+}
+
+export default function Simulador() {
+  const { playerData } = usePlayer()
+
+  if (!playerData) {
+    return (
+      <div>
+        <h1 className="text-2xl font-semibold text-white">Simulador</h1>
+        <p className="mt-4 text-sm text-slate-400">
+          Digite um nickname no menu lateral para começar.
+        </p>
+      </div>
+    )
+  }
+
+  return <SimuladorContent playerData={playerData} />
 }

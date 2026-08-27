@@ -236,6 +236,21 @@ export function getMinerBonusAtLevel(miner: Pick<Miner, 'bonus' | 'merges'>, lev
   return miner.merges.find((mg) => mg.level === level)?.bonus ?? 0
 }
 
+// room-config real usa um `miner_id` DIFERENTE por NÍVEL de merge, não um id
+// fixo por minerador -- confirmado contra dado real da conta NoID (208/208
+// instâncias da sala batendo, 0 exceções): nível 0 usa o `id` base do
+// catálogo, qualquer outro nível usa `merges[].mergeId` daquele nível
+// específico. sumUniqueMinerBonusPercent (calculatePower.ts) dedupa por
+// esse id exato -- ou seja, bônus de coleção conta cada TIER de merge como
+// um "tipo" colecionável distinto (Power Patriot base e Power Patriot nível
+// 2 contam como 2 tipos, não 1). Usado pelo Auto-Otimizador pra construir
+// candidatos do inventário colado com o MESMO id que a sala usaria se esse
+// minerador estivesse instalado nela.
+export function getRoomDedupMinerId(miner: Pick<Miner, 'id' | 'merges'>, level: number): string {
+  if (level === 0) return miner.id
+  return miner.merges.find((mg) => mg.level === level)?.mergeId ?? miner.id
+}
+
 export interface MergeCostRow {
   merge: MinerMerge
   totalPieces: number
