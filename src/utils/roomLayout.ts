@@ -215,6 +215,41 @@ export function minerPixelBoxInRack(
   }
 }
 
+export interface EmptyCellBox {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+// Retângulo de destaque pra uma célula VAZIA (Prompt 73, drag-and-drop do
+// inventário) -- reaproveita o MESMO eixo de posicionamento de
+// minerPixelBoxInRack (centerX/bottomY por x/y/largura), mas devolve uma
+// caixa com altura EXPLÍCITA (a pitch de uma prateleira, com uma margem
+// pra não colar na vizinha) em vez de "auto" -- não existe imagem de
+// minerador real aqui pra ancorar por baixo, só um retângulo de feedback
+// visual, então não faz sentido reusar a lógica de frameHeight/sprite.
+export function emptyCellPixelBox(
+  rackHeightCells: number,
+  cell: { x: number; y: number; width: 1 | 2 },
+): EmptyCellBox {
+  const xOffset = cell.width === 1 ? (cell.x === 0 ? -MINER_SINGLE_CELL_X_OFFSET : MINER_SINGLE_CELL_X_OFFSET) : 0
+  const yOffset = -(rackHeightCells - 1 - cell.y) * MINER_SHELF_PITCH - MINER_BASE_LIFT
+
+  const centerX = RACK_BOX_WIDTH_PX / 2 + xOffset
+  const bottomY = RACK_BOX_HEIGHT_PX + yOffset
+
+  const width = cell.width === 2 ? RACK_BOX_WIDTH_PX - 8 : RACK_BOX_WIDTH_PX / 2 - 4
+  const height = MINER_SHELF_PITCH - 4
+
+  return {
+    left: centerX - width / 2,
+    top: bottomY - height,
+    width,
+    height,
+  }
+}
+
 // Tamanho/gap dos selos de nível/set -- `V={width:11,height:8,gap:4}` no
 // bundle real (importado de gameSprites.js, mesma constante usada em
 // outras páginas do projeto pra badge de nível -- não confundir com o

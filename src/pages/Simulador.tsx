@@ -187,6 +187,7 @@ function RoomVisualization({
   onDismountRackMiners,
   onDismountRack,
   onResetSimulation,
+  draggedEntry,
 }: {
   playerData: PlayerData
   pasteText: string
@@ -205,6 +206,9 @@ function RoomVisualization({
   onDismountRackMiners: (rackInstanceId: string) => void
   onDismountRack: (rackInstanceId: string) => void
   onResetSimulation: () => void
+  // Drag-and-drop do inventário (Prompt 73) -- ver comentário em
+  // RoomRacksLayer.tsx. undefined/null fora de arraste.
+  draggedEntry: EnrichedMinerEntry | null
 }) {
   const realPlacements = roomConfigToRackPlacements(playerData.roomConfig)
   const unlockedLevels = new Set(realPlacements.map((p) => p.roomLevel))
@@ -323,6 +327,8 @@ function RoomVisualization({
                   placements={racksInSelectedLevel}
                   miners={displayMiners}
                   onRackClick={showingSimulation ? handleRackClick : undefined}
+                  draggedEntry={showingSimulation ? draggedEntry : null}
+                  onDropMiner={showingSimulation ? onSwapMiner : undefined}
                 />
               </ScaledRoomCanvas>
             </div>
@@ -371,6 +377,16 @@ function SimuladorContent({ playerData }: { playerData: PlayerData }) {
     useMinersInventoryImport()
   const optimizerState = useAutoOptimizer(playerData, entries)
 
+  // Drag-and-drop do inventário -> célula vazia da sala (Prompt 73) --
+  // elevado até aqui porque o card arrastável (RoomInventoryPanel) e o
+  // alvo do drop (RoomRacksLayer, dentro de RoomVisualization) são
+  // IRMÃOS, não pai/filho. draggedEntry é a fonte de verdade do feedback
+  // visual (quais células destacam verde) -- dataTransfer nativo só é
+  // lido de forma confiável no evento `drop` em todo navegador, não
+  // durante dragover, então não dá pra usá-lo sozinho pro highlight.
+  const [draggedEntry, setDraggedEntry] = useState<EnrichedMinerEntry | null>(null)
+  const remainingByEntryKey = computeRemainingInventory(optimizerState.simRoom.miners, entries)
+
   const optimizer: OptimizerControlsProps = {
     priority: optimizerState.priority,
     setPriority: optimizerState.setPriority,
@@ -405,12 +421,19 @@ function SimuladorContent({ playerData }: { playerData: PlayerData }) {
           onDismountRackMiners={optimizerState.dismountRackMiners}
           onDismountRack={optimizerState.dismountRack}
           onResetSimulation={optimizerState.resetSimulation}
+          draggedEntry={draggedEntry}
         />
       </div>
 
       <AutoOptimizerResults result={optimizerState.result} />
 
-      <RoomInventoryPanel entries={entries} />
+      <RoomInventoryPanel
+        entries={entries}
+        remainingByEntryKey={remainingByEntryKey}
+        draggedEntryKey={draggedEntry?.key ?? null}
+        onDragStartEntry={setDraggedEntry}
+        onDragEndEntry={() => setDraggedEntry(null)}
+      />
     </div>
   )
 }

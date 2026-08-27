@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Miner as RoomMinerInstance, Rack } from '../utils/calculatePower'
 import type { RackPlacement } from '../utils/roomLayout'
 import type { EnrichedMinerEntry } from '../hooks/useMinersInventoryImport'
-import { listRackSlots, type RackSlotView } from '../utils/simRoom'
+import { cellsAllowedForSlot, listRackSlots, type RackSlotView } from '../utils/simRoom'
 import { matchRoomMinerInstances } from '../utils/matchMinersInventory'
 import { formatPower } from '../utils/formatPower'
 import type { MinersData } from '../types/miner'
@@ -370,19 +370,9 @@ export default function SimRackModal({
               {slots.map((slot) => {
                 const key = slotKey(slot.x, slot.y)
                 const imageUrl = slot.occupant?._id ? (imageByInstanceId.get(slot.occupant._id) ?? null) : null
-                // Bug real corrigido (Prompt 72): antes só olhava
-                // slot.spansBothX (verdadeiro SÓ quando o slot já É um
-                // ocupante largura-2), então uma célula vazia isolada nunca
-                // considerava largura-2 como opção, mesmo com a vizinha
-                // (mesma linha, outro x) também vazia -- par inteiro livre
-                // deveria aceitar largura-2 igual a um spansBothX. Só
-                // libera 'any' quando a PRÓPRIA célula está vazia E a
-                // vizinha (se existir) também está -- uma vizinha ocupada
-                // continua restringindo a largura-1 (comportamento correto,
-                // não alterado).
-                const sibling = !slot.spansBothX ? slots.find((s) => s.y === slot.y && s.x !== slot.x) : undefined
-                const pairFullyEmpty = !slot.occupant && (!sibling || !sibling.occupant)
-                const cellsAllowed: 1 | 2 | 'any' = slot.spansBothX || pairFullyEmpty ? 'any' : 1
+                // Compartilhado com o drag-and-drop (Prompt 73) -- ver
+                // cellsAllowedForSlot em simRoom.ts.
+                const cellsAllowed = cellsAllowedForSlot(slots, slot)
                 return (
                   <SlotRow
                     key={key}

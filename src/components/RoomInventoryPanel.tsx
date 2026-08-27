@@ -6,6 +6,15 @@ import { getMergeLevelColor } from '../utils/minerMergeCalculator'
 import { resolveAssetUrl } from '../utils/resolveAssetUrl'
 import type { EnrichedMinerEntry } from '../hooks/useMinersInventoryImport'
 
+// MIME custom (Prompt 73, drag-and-drop) -- carrega só a KEY da entrada
+// arrastada (RoomRacksLayer resolve a entry completa via essa key contra o
+// array `inventory` que já tem em mãos). dataTransfer.getData só é
+// confiável no evento `drop` em todo navegador (dragover não expõe o
+// VALOR por segurança, só os tipos) -- por isso o feedback visual durante
+// o arraste (quais células destacam verde) usa o estado React
+// `draggedEntry` elevado a SimuladorContent, não dataTransfer.
+export const DRAG_ENTRY_KEY_MIME = 'application/x-rlc-inventory-entry-key'
+
 // Painel de RESULTADOS do inventário importado (colado pelo jogador) --
 // mesma filosofia de /merges (dado do usuário, nunca busca de catálogo
 // público pra esse fim). O campo de colar em si fica no painel de stats
@@ -77,16 +86,47 @@ function RarityBadge({ level }: { level: number }) {
   )
 }
 
-function MinerCard({ entry }: { entry: EnrichedMinerEntry }) {
+// draggable/onDragStart/onDragEnd são opcionais -- só vêm preenchidos
+// quando o painel está ligado ao Simulador com uma sala simulada por trás
+// (sempre, hoje) -- reaproveita EXATAMENTE a mesma operação de trocar uma
+// célula vazia já usada pelo modal (swapMiner em useAutoOptimizer.ts), só
+// disparada por drag em vez de clique (Prompt 73). `remaining` (se
+// fornecido) mostra "restam N" igual ao seletor de troca do modal, e
+// desabilita o arraste quando não sobra nenhuma cópia -- mesma regra de
+// disponibilidade, uma fonte só (computeRemainingInventory).
+function MinerCard({
+  entry,
+  remaining,
+  isDragged,
+  onDragStartEntry,
+  onDragEndEntry,
+}: {
+  entry: EnrichedMinerEntry
+  remaining?: number
+  isDragged?: boolean
+  onDragStartEntry?: (entry: EnrichedMinerEntry) => void
+  onDragEndEntry?: () => void
+}) {
+  const draggable = remaining === undefined || remaining > 0
   return (
     <div
-      className="shrink-0 overflow-hidden rounded-lg border border-slate-700 bg-slate-800"
+      draggable={draggable}
+      onDragStart={(e) => {
+        if (!draggable) return
+        e.dataTransfer.setData(DRAG_ENTRY_KEY_MIME, entry.key)
+        e.dataTransfer.effectAllowed = 'copy'
+        onDragStartEntry?.(entry)
+      }}
+      onDragEnd={() => onDragEndEntry?.()}
+      className={`shrink-0 overflow-hidden rounded-lg border border-slate-700 bg-slate-800 transition-opacity ${
+        draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-not-allowed opacity-50'
+      } ${isDragged ? 'opacity-40' : ''}`}
       style={{ width: CARD_WIDTH_PX }}
     >
       <div className="relative flex h-20 items-center justify-center bg-slate-900 p-2">
         <RarityBadge level={entry.matchedLevel} />
         {entry.image ? (
-          <img src={entry.image} alt={entry.name} className="max-h-full max-w-full object-contain" />
+          <img src={entry.image} alt={entry.name} className="max-h-full max-w-full object-contain pointer-events-none" />
         ) : (
           <span className="text-slate-600">?</span>
         )}
@@ -94,14 +134,29 @@ function MinerCard({ entry }: { entry: EnrichedMinerEntry }) {
       <p className="truncate px-2 pt-1.5 text-center text-xs font-semibold text-white" title={entry.name}>
         {entry.name}
       </p>
-      <p className="px-2 pb-2 pt-0.5 text-center text-[11px] text-slate-400">
+      <p className="px-2 pb-0.5 pt-0.5 text-center text-[11px] text-slate-400">
         {formatPower(entry.power)} | {entry.bonus}%
       </p>
+      {remaining !== undefined && (
+        <p className="px-2 pb-2 text-center text-[10px] text-slate-500">restam {remaining}</p>
+      )}
     </div>
   )
 }
 
-export default function RoomInventoryPanel({ entries }: { entries: EnrichedMinerEntry[] }) {
+export default function RoomInventoryPanel({
+  entries,
+  remainingByEntryKey,
+  draggedEntryKey,
+  onDragStartEntry,
+  onDragEndEntry,
+}: {
+  entries: EnrichedMinerEntry[]
+  remainingByEntryKey?: Map<string, number>
+  draggedEntryKey?: string | null
+  onDragStartEntry?: (entry: EnrichedMinerEntry) => void
+  onDragEndEntry?: () => void
+}) {
   const [searchText, setSearchText] = useState('')
   const [sortOption, setSortOption] = useState<SortOption>('poder_desc')
   const [widthFilter, setWidthFilter] = useState<Set<number>>(() => new Set([1, 2]))
@@ -302,7 +357,14 @@ export default function RoomInventoryPanel({ entries }: { entries: EnrichedMiner
         ) : (
           <div className="flex flex-nowrap gap-3 overflow-x-auto">
             {pageEntries.map((entry) => (
-              <MinerCard key={entry.key} entry={entry} />
+              <MinerCard
+                key={entry.key}
+                entry={entry}
+                remaining={remainingByEntryKey?.get(entry.key)}
+                isDragged={draggedEntryKey === entry.key}
+                onDragStartEntry={onDragStartEntry}
+                onDragEndEntry={onDragEndEntry}
+              />
             ))}
           </div>
         )}

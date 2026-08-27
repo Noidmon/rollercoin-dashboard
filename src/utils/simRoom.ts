@@ -168,4 +168,22 @@ export function listRackSlots(miners: RoomMinerInstance[], rackInstanceId: strin
   return slots
 }
 
+// Compatibilidade de largura de UM slot -- usada tanto pelo seletor de
+// troca do modal (SimRackModal.tsx) quanto pelo drag-and-drop do
+// inventário (Prompt 73, RoomRacksLayer.tsx), pra nunca duplicar essa
+// regra em dois lugares. Um slot já ocupado por largura-2 (spansBothX)
+// aceita qualquer largura na troca (substituição direta). Um slot vazio
+// só aceita largura-2 se a célula VIZINHA (mesma linha, outro x) também
+// estiver vazia -- caso contrário, só largura-1. Um slot OCUPADO por
+// largura-1 nunca aceita largura-2 aqui (trocar um largura-1 por um
+// largura-2 exigiria invadir a vizinha mesmo que ela esteja livre --
+// fora de escopo, mesma limitação documentada desde o modal).
+export function cellsAllowedForSlot(slots: RackSlotView[], slot: RackSlotView): 1 | 2 | 'any' {
+  if (slot.spansBothX) return 'any'
+  if (slot.occupant) return 1
+  const sibling = slots.find((s) => s.y === slot.y && s.x !== slot.x)
+  const pairFullyEmpty = !sibling || !sibling.occupant
+  return pairFullyEmpty ? 'any' : 1
+}
+
 export { minerAt }

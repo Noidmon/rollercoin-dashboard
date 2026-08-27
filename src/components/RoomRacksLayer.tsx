@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
 import type { Miner } from '../utils/calculatePower'
 import { matchRoomMinerInstances } from '../utils/matchMinersInventory'
+import { cellsAllowedForSlot, listRackSlots } from '../utils/simRoom'
+import type { EnrichedMinerEntry } from '../hooks/useMinersInventoryImport'
 import type { MinersData } from '../types/miner'
 import { getRackImageMetrics, type RackImageMetrics } from '../utils/rackTrimBox'
 import { resolveAssetUrl } from '../utils/resolveAssetUrl'
 import {
+  emptyCellPixelBox,
   minerLevelBadges,
   minerPixelBoxInRack,
   rackGameSpriteBox,
@@ -133,9 +136,25 @@ interface RoomRacksLayerProps {
   // que desabilitar cliques explicitamente, e o cursor/hover também some
   // sozinho sem essa prop.
   onRackClick?: (rackInstanceId: string, focusedMinerInstanceId: string | null) => void
+  // Drag-and-drop do inventário (Prompt 73) -- mesma convenção de
+  // "só definido na aba Simulação" acima. draggedEntry vem de um useState
+  // em SimuladorContent (setado no onDragStart do card do inventário) --
+  // não dá pra ler o VALOR de dataTransfer durante dragover em todo
+  // navegador (só os tipos, por segurança), então o feedback visual (quais
+  // células vazias destacam verde) precisa desse estado React, não do
+  // dataTransfer nativo. onDropMiner reaproveita a MESMA operação de
+  // preencher uma célula vazia já usada pelo modal (swapMiner).
+  draggedEntry?: EnrichedMinerEntry | null
+  onDropMiner?: (rackInstanceId: string, x: 0 | 1, y: number, entry: EnrichedMinerEntry) => void
 }
 
-export default function RoomRacksLayer({ placements, miners, onRackClick }: RoomRacksLayerProps) {
+export default function RoomRacksLayer({
+  placements,
+  miners,
+  onRackClick,
+  draggedEntry,
+  onDropMiner,
+}: RoomRacksLayerProps) {
   // Catálogos estáticos (public/data/racks.json e public/data/miners.json,
   // já sincronizados em sessões anteriores) -- só resolvem a IMAGEM de cada
   // tipo de rack/minerador, não são dado do jogador. Buscar isso aqui não
@@ -323,6 +342,41 @@ export default function RoomRacksLayer({ placements, miners, onRackClick }: Room
                 </div>
               )
             })}
+
+            {onDropMiner &&
+              (() => {
+                const slots = listRackSlots(rackMiners, placement.instanceId, placement.heightCells)
+                return slots
+                  .filter((slot) => !slot.occupant)
+                  .map((slot) => {
+                    const cellsAllowed = cellsAllowedForSlot(slots, slot)
+                    const isCompatible = !!draggedEntry && (cellsAllowed === 'any' || draggedEntry.cells === 1)
+                    const cellBox = emptyCellPixelBox(placement.heightCells, { x: slot.x, y: slot.y, width: 1 })
+                    return (
+                      <div
+                        key={`empty-${slot.x}-${slot.y}`}
+                        data-empty-cell={`${placement.instanceId}:${slot.x}:${slot.y}`}
+                        className={`absolute rounded transition-colors ${
+                          isCompatible
+                            ? 'border-2 border-emerald-400 bg-emerald-400/25'
+                            : draggedEntry
+                              ? 'border border-dashed border-slate-600/40'
+                              : ''
+                        }`}
+                        style={{ left: cellBox.left, top: cellBox.top, width: cellBox.width, height: cellBox.height }}
+                        onDragOver={(e) => {
+                          e.preventDefault()
+                          e.dataTransfer.dropEffect = isCompatible ? 'copy' : 'none'
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault()
+                          if (!draggedEntry || !isCompatible) return
+                          onDropMiner(placement.instanceId, slot.x, slot.y, draggedEntry)
+                        }}
+                      />
+                    )
+                  })
+              })()}
           </div>
         )
       })}
