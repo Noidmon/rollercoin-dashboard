@@ -13,12 +13,25 @@ import {
   cloneSimRoomFromReal,
   dismountRackInSim,
   dismountRackMinersInSim,
+  minerAt,
+  occupantsInRack,
   removeMinerFromSim,
   swapMinerInSim,
   type SimRoomState,
 } from '../utils/simRoom'
+import type { Miner as RoomMinerInstance, Rack } from '../utils/calculatePower'
+import { getRoomDedupMinerId } from '../utils/minerMergeCalculator'
+import { matchRoomMinerInstances } from '../utils/matchMinersInventory'
+import type { MinersData } from '../types/miner'
 import type { EnrichedMinerEntry } from './useMinersInventoryImport'
+import type { useRoomRemovedInventory, RoomRemovalMinerInput } from './useRoomRemovedInventory'
+import type { useRemovedRacks } from './useRemovedRacks'
 import type { PlayerData } from '../context/PlayerContext'
+
+interface RackCatalogImageEntry {
+  rackId: string
+  image: string | null
+}
 
 // Uma opção de teto de liga -- "Topo de {liga} -- até X" = 1 passo (na
 // menor casa decimal exibida) ABAIXO do piso da PRÓXIMA liga, nunca o piso
@@ -92,7 +105,23 @@ export interface LiveOptimizerSummary {
 // EXATAMENTE playerData.roomConfig -- runAutoOptimizer só lê arrays de
 // miners/racks no mesmo formato, então um subconjunto (racks desmontadas)
 // ou uma lista com miners trocados funciona sem mudança nenhuma no motor.
-export function useAutoOptimizer(playerData: PlayerData, inventory: EnrichedMinerEntry[]) {
+// Prompt 84 (removidos da sala voltam pro inventário -- reversão da
+// decisão antiga "efêmero"): roomRemovedInventory/removedRacks são
+// instanciados FORA deste hook (SimuladorContent, irmãos de
+// useHypotheticalInventory) e passados aqui porque as 4 operações manuais
+// de edição (swap/remove/desmontar miners/desmontar rack) e o próprio
+// Auto-Otimizador -- que são donos de simRoom -- são os únicos lugares que
+// sabem O QUE está sendo desalojado no momento exato da remoção (antes do
+// filter descartar o objeto). O hook aqui só ESCREVE nesses 2 pools
+// (addRemoved/addRemovedRack) e LÊ de volta pra reinstalar
+// (removedRacks.takeOut) -- nunca decide o que entra em allEntries/UI, isso
+// continua em SimuladorContent.
+export function useAutoOptimizer(
+  playerData: PlayerData,
+  inventory: EnrichedMinerEntry[],
+  roomRemovedInventory: ReturnType<typeof useRoomRemovedInventory>,
+  removedRacks: ReturnType<typeof useRemovedRacks>,
+) {
   const [priority, setPriority] = useState<OptimizerPriority>('padrao')
   const [mode, setMode] = useState<OptimizerMode>('preservar_sala')
   const [leagueIndex, setLeagueIndex] = useState<number>(() => {
@@ -114,6 +143,89 @@ export function useAutoOptimizer(playerData: PlayerData, inventory: EnrichedMine
 
   const [simRoom, setSimRoom] = useState<SimRoomState>(() => cloneSimRoomFromReal(playerData))
 
+  // Catálogos estáticos (Prompt 84) -- só pra resolver imagem/nível/id de
+  // dedup de um minerador/rack sendo removido, casando por nome+power
+  // (mesma técnica já usada em RoomRacksLayer/SimRackModal, matchRoomMinerInstances)
+  // já que RoomMinerInstance/OptimizerRemoved não guardam imagem nenhuma.
+  const [minersCatalog, setMinersCatalog] = useState<MinersData | null>(null)
+  const [racksCatalog, setRacksCatalog] = useState<RackCatalogImageEntry[] | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/data/miners.json')
+      .then((res) => {
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+        return res.json() as Promise<MinersData>
+      })
+      .then((json) => {
+        if (!cancelled) setMinersCatalog(json)
+      })
+      .catch(() => {
+        if (!cancelled) setMinersCatalog({ generatedAt: '', total: 0, totalMerges: 0, miners: [] })
+      })
+    fetch('/data/racks.json')
+      .then((res) => {
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+        return res.json() as Promise<{ racks: RackCatalogImageEntry[] }>
+      })
+      .then((json) => {
+        if (!cancelled) setRacksCatalog(json.racks)
+      })
+      .catch(() => {
+        if (!cancelled) setRacksCatalog([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Só instalados desde o INÍCIO da sessão sintetizam uma entrada "removido
+  // da sala" -- um item que já veio do texto colado ou do modal "+" e foi
+  // instalado nesta sessão já "reaparece" sozinho no card correspondente
+  // (recontagem ao vivo de computeRemainingInventory), sem precisar de
+  // nada disto (ver investigação do Prompt 83/84, ponto 4).
+  function isOriginallyInstalled(m: RoomMinerInstance): boolean {
+    return !m.fromInventory && !m.isHypothetical
+  }
+
+  // Resolve os dados que faltam (roomDedupMinerId real, imagem, nível na
+  // convenção de raridade do catálogo) casando nome+power contra
+  // minersCatalog -- mesma técnica de matchRoomMinerInstances já usada pra
+  // resolver imagem de miners da sala em RoomRacksLayer/SimRackModal, em vez
+  // de reinventar a conversão level+1 (mais frágil pra casos legacy).
+  function toRoomRemovalItem(input: {
+    name: string
+    power: number
+    bonusPercent: number
+    cells: 1 | 2
+  }): RoomRemovalMinerInput | null {
+    if (!minersCatalog) return null
+    const [resolved] = matchRoomMinerInstances([{ name: input.name, power: input.power }], minersCatalog.miners)
+    if (!resolved) return null
+    const catalogMiner = minersCatalog.miners.find((c) => c.id === resolved.minerId)
+    if (!catalogMiner) return null
+    return {
+      roomDedupMinerId: getRoomDedupMinerId(catalogMiner, resolved.matchedLevel),
+      name: resolved.minerName,
+      power: input.power,
+      bonus: input.bonusPercent / 100,
+      cells: input.cells,
+      image: catalogMiner.image,
+      matchedLevel: resolved.matchedLevel,
+    }
+  }
+
+  function reportIfOriginallyInstalled(occupant: RoomMinerInstance | undefined) {
+    if (!occupant || !isOriginallyInstalled(occupant)) return
+    const item = toRoomRemovalItem({
+      name: occupant.name ?? '',
+      power: occupant.power,
+      bonusPercent: occupant.bonus_percent ?? 0,
+      cells: occupant.width === 2 ? 2 : 1,
+    })
+    if (item) roomRemovedInventory.addRemoved(item)
+  }
+
   // Conta nova carregada (nickname diferente buscado) -- descarta qualquer
   // edição/resultado da conta anterior. Sem isso, trocar de nickname
   // deixaria a sala simulada "vazando" dados de outra conta.
@@ -129,20 +241,52 @@ export function useAutoOptimizer(playerData: PlayerData, inventory: EnrichedMine
     setResult(null)
   }
 
+  // As 4 operações abaixo capturam o ocupante ANTES de chamar setSimRoom
+  // (lendo simRoom.miners/racks do closure, não de dentro do updater --
+  // setState updaters podem rodar 2x em StrictMode/dev, e reportar a
+  // remoção é um efeito colateral que não pode duplicar) -- cada uma é
+  // disparada por UM clique/drop do usuário, então o closure já reflete o
+  // estado atual no momento do evento.
   function swapMiner(rackInstanceId: string, x: 0 | 1, y: number, entry: EnrichedMinerEntry) {
+    reportIfOriginallyInstalled(minerAt(simRoom.miners, rackInstanceId, x, y))
     setSimRoom((prev) => swapMinerInSim(prev, rackInstanceId, x, y, entry, setsData))
   }
 
   function removeMiner(rackInstanceId: string, x: 0 | 1, y: number) {
+    reportIfOriginallyInstalled(minerAt(simRoom.miners, rackInstanceId, x, y))
     setSimRoom((prev) => removeMinerFromSim(prev, rackInstanceId, x, y))
   }
 
   function dismountRackMiners(rackInstanceId: string) {
+    for (const occupant of occupantsInRack(simRoom.miners, rackInstanceId)) {
+      reportIfOriginallyInstalled(occupant)
+    }
     setSimRoom((prev) => dismountRackMinersInSim(prev, rackInstanceId))
   }
 
   function dismountRack(rackInstanceId: string) {
+    for (const occupant of occupantsInRack(simRoom.miners, rackInstanceId)) {
+      reportIfOriginallyInstalled(occupant)
+    }
+    const rack = simRoom.racks.find((r) => r._id === rackInstanceId)
+    if (rack) {
+      const image = rack.rack_id ? (racksCatalog?.find((r) => r.rackId === rack.rack_id)?.image ?? null) : null
+      // placement removido -- rack fica "sem posição", pronta pra ganhar
+      // uma posição nova ao reinstalar (ver reinstallRack).
+      removedRacks.addRemovedRack({ ...rack, placement: undefined }, image)
+    }
     setSimRoom((prev) => dismountRackInSim(prev, rackInstanceId))
+  }
+
+  // Recoloca uma rack desmontada numa posição vazia da sala (Prompt 84) --
+  // qualquer célula válida da tabela Dr pra aquele room_level (nenhuma
+  // restrição de "tamanho" -- cada rack ocupa exatamente 1 célula da grade
+  // da sala, não importa rack_info.width/height, ver investigação ponto 5).
+  function reinstallRack(rackInstanceId: string, roomLevel: number, x: number, y: number) {
+    const rack = removedRacks.takeOut(rackInstanceId)
+    if (!rack) return
+    const placedRack: Rack = { ...rack, placement: { room_level: roomLevel, x, y } }
+    setSimRoom((prev) => ({ ...prev, racks: [...prev.racks, placedRack] }))
   }
 
   const liveSummary: LiveOptimizerSummary = useMemo(() => {
@@ -170,6 +314,18 @@ export function useAutoOptimizer(playerData: PlayerData, inventory: EnrichedMine
       setsData,
     })
     setResult(optimizerResult)
+    // Prompt 84: miners instalados que o modo "Máximo poder" desalojou
+    // agora voltam pro pool de removidos, em lote, depois do algoritmo
+    // decidir (nunca durante a busca em si -- ver investigação ponto 2).
+    for (const removed of optimizerResult.removedInstalled) {
+      const item = toRoomRemovalItem({
+        name: removed.name,
+        power: removed.power,
+        bonusPercent: removed.bonusPercent,
+        cells: removed.cells,
+      })
+      if (item) roomRemovedInventory.addRemoved(item)
+    }
     // O otimizador só reposiciona MINERS -- racks nunca mudam por conta
     // dele, então simRoom.racks fica como estava (racks desmontadas
     // manualmente continuam fora, o otimizador nunca as recria).
@@ -196,5 +352,6 @@ export function useAutoOptimizer(playerData: PlayerData, inventory: EnrichedMine
     removeMiner,
     dismountRackMiners,
     dismountRack,
+    reinstallRack,
   }
 }

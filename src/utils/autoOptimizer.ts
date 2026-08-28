@@ -155,10 +155,22 @@ export interface OptimizerPlacement {
   unchanged: boolean
 }
 
+// Prompt 84 (removidos voltam pro inventário, reversão da decisão antiga
+// "efêmero"): bonusPercent/cells adicionados -- são os campos que faltavam
+// pra o chamador (useAutoOptimizer.ts) reconstruir uma entrada de
+// inventário completa a partir daqui. roomDedupMinerId/level/image não
+// entraram: o chamador já precisa casar name+power contra o catálogo real
+// (matchRoomMinerInstances) pra resolver a imagem de qualquer forma (essa
+// info nunca existiu aqui -- ver `image: null` fixo em
+// placeInstalledAtOriginalPositions), então reaproveita o MESMO casamento
+// pra também obter roomDedupMinerId/matchedLevel corretos, em vez de
+// carregar 2 fontes de verdade pro mesmo dado.
 export interface OptimizerRemoved {
   instanceKey: string
   name: string
   power: number
+  bonusPercent: number
+  cells: 1 | 2
 }
 
 export interface OptimizerEmptySlot {
@@ -847,7 +859,7 @@ export function runAutoOptimizer(input: AutoOptimizerInput): AutoOptimizerResult
     mode === 'maximo_poder'
       ? installedPlacements
           .filter((p) => !placedInstalledKeys.has(p.instanceKey))
-          .map((p) => ({ instanceKey: p.instanceKey, name: p.name, power: p.power }))
+          .map((p) => ({ instanceKey: p.instanceKey, name: p.name, power: p.power, bonusPercent: p.bonusPercent, cells: p.cells }))
       : []
 
   // Motivo global (não por-slot) pra vazios remanescentes: se ainda sobrou

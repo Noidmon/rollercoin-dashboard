@@ -60,6 +60,12 @@ export function buildMinerFromInventoryEntry(
     // computeRemainingInventory nunca desconte um item hipotético do pool
     // REAL do mesmo nome+nível, e vice-versa.
     isHypothetical: entry.isHypothetical,
+    // Propaga a marca de "veio de remoção da sala" (Prompt 84) -- mesma
+    // ideia, terceira origem mutuamente exclusiva. Reinstalar um item desse
+    // pool e removê-lo de novo depois precisa continuar contando pro MESMO
+    // pool (nunca virar um "instalado original" de novo, nem vazar pro pool
+    // hipotético/real).
+    fromRoomRemoval: entry.fromRoomRemoval,
   }
 }
 
@@ -95,6 +101,21 @@ export function buildMinerFromInventoryEntry(
 // dentro de simRoom.miners. Sem essa distinção, usar 1 cópia hipotética
 // erradamente descontaria do "restam" do item REAL de mesmo nome (ou
 // vice-versa).
+//
+// Prompt 84 (removidos da sala voltam pro inventário): a mesma proteção
+// agora precisa de uma TERCEIRA via -- "real colado" (texto colado),
+// "hipotético" (modal "+") e "removido da sala" (instalado desde o início
+// da sessão, nunca teve entrada no texto colado) são 3 pools totalmente
+// separados do MESMO nome+nível. Sem isso, um "Bread nível 2" removido da
+// sala (pool próprio, base = quantidade removida) colidiria com um "Bread
+// nível 2" colado (pool diferente, base = quantidade do texto) na mesma
+// chave, descontando errado dos dois.
+function originTag(entry: { isHypothetical?: boolean; fromRoomRemoval?: boolean }): string {
+  if (entry.isHypothetical) return 'hyp'
+  if (entry.fromRoomRemoval) return 'room'
+  return 'real'
+}
+
 export function computeRemainingInventory(
   simMiners: RoomMinerInstance[],
   entries: EnrichedMinerEntry[],
@@ -102,14 +123,14 @@ export function computeRemainingInventory(
   const usedByNameLevel = new Map<string, number>()
   for (const m of simMiners) {
     if (!m.name || !m.fromInventory) continue
-    const key = `${m.name}|${m.level ?? 0}|${m.isHypothetical ? 1 : 0}`
+    const key = `${m.name}|${m.level ?? 0}|${originTag(m)}`
     usedByNameLevel.set(key, (usedByNameLevel.get(key) ?? 0) + 1)
   }
 
   const remaining = new Map<string, number>()
   for (const entry of entries) {
     const level = entry.matchedLevel === 0 ? 0 : entry.matchedLevel - 1
-    const used = usedByNameLevel.get(`${entry.name}|${level}|${entry.isHypothetical ? 1 : 0}`) ?? 0
+    const used = usedByNameLevel.get(`${entry.name}|${level}|${originTag(entry)}`) ?? 0
     remaining.set(entry.key, Math.max(0, entry.quantity - used))
   }
   return remaining
@@ -165,6 +186,15 @@ export function swapMinerInSim(
 
 export function removeMinerFromSim(state: SimRoomState, rackInstanceId: string, x: 0 | 1, y: number): SimRoomState {
   return { ...state, miners: removeOccupantsAt(state.miners, rackInstanceId, x, y) }
+}
+
+// Todos os ocupantes de uma rack, ANTES de remover -- usado pelo chamador
+// (useAutoOptimizer.ts) pra capturar quem estava lá e decidir se cada um
+// sintetiza uma entrada "removido da sala" (Prompt 84), já que
+// dismountRackMinersInSim/dismountRackInSim só devolvem o estado FINAL sem
+// os ocupantes descartados.
+export function occupantsInRack(miners: RoomMinerInstance[], rackInstanceId: string): RoomMinerInstance[] {
+  return miners.filter((m) => m.placement?.user_rack_id === rackInstanceId)
 }
 
 export function dismountRackMinersInSim(state: SimRoomState, rackInstanceId: string): SimRoomState {

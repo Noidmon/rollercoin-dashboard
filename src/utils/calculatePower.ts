@@ -44,6 +44,14 @@ export interface Miner {
   // Combinado com fromInventory pra computeRemainingInventory nunca
   // misturar o pool hipotético com o pool real do mesmo nome+nível.
   isHypothetical?: boolean
+  // Marca que essa instância voltou pro inventário depois de ser removida
+  // da sala (Prompt 84) -- terceira origem possível, mutuamente exclusiva
+  // com isHypothetical: é posse REAL (ao contrário de hipotético), mas sem
+  // "restam N" vindo de texto colado (ao contrário de fromInventory puro) --
+  // a base é a própria quantidade removida da sala nesta sessão. Ver
+  // useRoomRemovedInventory.ts e o comentário em computeRemainingInventory
+  // (simRoom.ts) sobre a chave de dedup de 3 vias.
+  fromRoomRemoval?: boolean
 }
 
 export interface Rack {

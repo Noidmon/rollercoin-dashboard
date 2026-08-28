@@ -87,8 +87,8 @@ export default function AutoOptimizerResults({ result }: { result: AutoOptimizer
       {result.removedInstalled.length > 0 && (
         <div className="mt-3">
           <p className="mb-1.5 text-xs font-medium text-amber-400">
-            Removidos da sala ({result.removedInstalled.length}) -- não voltam pro inventário, só saem da
-            simulação
+            Removidos da sala ({result.removedInstalled.length}) -- voltaram pro Inventário Importado,
+            prontos pra recolocar
           </p>
           <ul className="max-h-56 space-y-1 overflow-y-auto text-xs text-slate-300">
             {result.removedInstalled.map((r) => (

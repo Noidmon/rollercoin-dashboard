@@ -69,3 +69,23 @@ export function cellToPixel(roomLevel: number, x: number, y: number): PixelPosit
   if (!table) return null
   return table[`${x},${y}`] ?? null
 }
+
+export interface RoomGridCell {
+  x: number
+  y: number
+  pixelPosition: PixelPosition
+}
+
+// Todas as posições FIXAS e válidas de rack de uma sala (Prompt 84 --
+// recolocação de rack desmontada) -- 12 posições pra Sala 1 (room_level=0),
+// 18 pras Salas 2/3/4 (room_level=1,2,3, mesma tabela). Uma posição "vazia"
+// na sala é sempre uma dessas células menos as já ocupadas por alguma rack
+// -- nunca espaço livre arbitrário (ver comentário no topo do arquivo).
+export function allCellsForRoomLevel(roomLevel: number): RoomGridCell[] {
+  const table = TABLE_BY_ROOM_LEVEL[roomLevel]
+  if (!table) return []
+  return Object.entries(table).map(([key, pixelPosition]) => {
+    const [x, y] = key.split(',').map(Number)
+    return { x, y, pixelPosition }
+  })
+}

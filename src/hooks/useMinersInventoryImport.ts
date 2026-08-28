@@ -25,6 +25,11 @@ export interface EnrichedMinerEntry {
   // visual no card, computeRemainingInventory) pra nunca misturar o pool
   // hipotético com o pool real do mesmo nome+nível.
   isHypothetical?: boolean
+  // Terceira origem possível (Prompt 84) -- item que voltou pro inventário
+  // depois de removido da sala (minerador que já estava instalado desde o
+  // início da sessão, nunca colado). Ver useRoomRemovedInventory.ts.
+  // Mutuamente exclusiva com isHypothetical.
+  fromRoomRemoval?: boolean
 }
 
 // Estado do inventário colado (Simulador) compartilhado entre o campo de
