@@ -43,4 +43,5 @@ export const HAMSTERS: Hamster[] = [
   { slug: 'uncle-azoth', name: "Uncle'Azoth", stats: { health: 85, strength: 85, luck: 60 }, survivalAbilityBonus: 0, abilitiesText: [], ultimateText: 'Converte recompensas de expedição em RLT', generation: 3, levelCount: 6, imageUrl: local('uncle-azoth.gif') },
   { slug: 'captain-jack-pot', name: 'Captain Jack Pot', stats: { health: 65, strength: 60, luck: 95 }, survivalAbilityBonus: 0, abilitiesText: [], ultimateText: 'Estudo Inteligente: sem descanso e +1 stat se sobreviver', generation: 3, levelCount: 6, imageUrl: local('captain-jack-pot.png') },
   { slug: 'davy-coins', name: 'Davy Coins', stats: { health: 80, strength: 90, luck: 30 }, survivalAbilityBonus: 5, abilitiesText: ['5% Sobrevivência'], ultimateText: '50/50: risca recompensa, triplica ou some', generation: 2, levelCount: 1, imageUrl: local('davy-coins.gif') },
+  { slug: 'gordon-hamzy', name: 'Gordon Hamzy', stats: { health: 70, strength: 85, luck: 55 }, survivalAbilityBonus: 10, abilitiesText: ['Baú de Hamsters +1', 'Tempo de expedição -15%', '10% Sobrevivência'], ultimateText: null, generation: 2, levelCount: 6, imageUrl: local('gordon-hamzy.gif') },
 ]
