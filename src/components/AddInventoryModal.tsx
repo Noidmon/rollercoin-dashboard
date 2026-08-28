@@ -277,7 +277,13 @@ export default function AddInventoryModal({
           </p>
         )}
 
-        <div className="flex-1 overflow-y-auto p-4">
+        {/* Prompt 79: scroll aqui é esperado (até 120 cards do catálogo,
+            bem mais alto que o espaço disponível) -- não é bug de layout
+            (confirmado: o container GERAL do modal, acima, não tem
+            scroll nenhum, overflow-hidden dele sempre bate certo). Só
+            estiliza a barra pra ficar fina/discreta, combinando com o
+            tema escuro, em vez de remover o scroll (que é necessário). */}
+        <div className="scrollbar-themed flex-1 overflow-y-auto p-4">
           <div className="flex flex-wrap gap-3">
             {mode === 'miners'
               ? minerItems.slice(0, 120).map((miner) => (

@@ -3,3 +3,32 @@
 body {
   margin: 0;
 }
+
+/* Scrollbar fina e discreta, combinando com o tema escuro -- usada em
+   áreas de scroll interno que legitimamente têm bastante conteúdo (ex: a
+   grade de catálogo do modal "Adicionar Item Hipotético", Prompt 79: o
+   scroll ali é esperado/necessário, não um bug de layout -- só a barra
+   padrão do navegador destoava do resto do design). Classe utilitária, não
+   aplicada globalmente de propósito -- só onde já foi confirmado que o
+   scroll é intencional. */
+.scrollbar-themed {
+  scrollbar-width: thin;
+  scrollbar-color: #475569 transparent; /* slate-600 sobre transparente */
+}
+
+.scrollbar-themed::-webkit-scrollbar {
+  width: 8px;
+}
+
+.scrollbar-themed::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-themed::-webkit-scrollbar-thumb {
+  background-color: #475569; /* slate-600 */
+  border-radius: 9999px;
+}
+
+.scrollbar-themed::-webkit-scrollbar-thumb:hover {
+  background-color: #64748b; /* slate-500 */
+}
