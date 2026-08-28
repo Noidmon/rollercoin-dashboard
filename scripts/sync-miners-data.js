@@ -16,6 +16,7 @@
 import { writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs'
 import { join, basename, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { writeJsonIfChanged } from './lib/writeJsonIfChanged.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
@@ -185,7 +186,7 @@ async function main() {
   }
 
   mkdirSync(DATA_DIR, { recursive: true })
-  writeFileSync(MINERS_JSON_PATH, JSON.stringify(output))
+  const { written } = writeJsonIfChanged(MINERS_JSON_PATH, output)
 
   console.log('')
   console.log('sincronizando preços de crafting...')
@@ -202,7 +203,11 @@ async function main() {
     `imagens: ${imageSync.uniqueCount} únicas -- ${imageSync.downloadedCount} baixadas agora, ${imageSync.alreadyExistingCount} já existentes`,
   )
   if (imageSync.failedCount > 0) console.log(`imagens que falharam: ${imageSync.failedCount}`)
-  console.log(`miners.json: ${sizeLabel}`)
+  console.log(
+    written
+      ? `miners.json: ${sizeLabel} (reescrito -- catálogo mudou)`
+      : `miners.json: ${sizeLabel} (sem mudança real -- generatedAt antigo mantido, arquivo intocado)`,
+  )
 }
 
 main().catch((err) => {

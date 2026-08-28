@@ -16,6 +16,7 @@
 import { writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs'
 import { join, basename, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { writeJsonIfChanged } from './lib/writeJsonIfChanged.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
@@ -189,7 +190,7 @@ async function main() {
   }
 
   mkdirSync(DATA_DIR, { recursive: true })
-  writeFileSync(RACKS_JSON_PATH, JSON.stringify(output))
+  const { written } = writeJsonIfChanged(RACKS_JSON_PATH, output)
 
   const sizeBytes = statSync(RACKS_JSON_PATH).size
   const sizeKb = sizeBytes / 1024
@@ -208,7 +209,11 @@ async function main() {
   } else {
     console.log('todos os racks tiveram width/height reconhecidos pelo sufixo do nome')
   }
-  console.log(`racks.json: ${sizeLabel}`)
+  console.log(
+    written
+      ? `racks.json: ${sizeLabel} (reescrito -- catálogo mudou)`
+      : `racks.json: ${sizeLabel} (sem mudança real -- generatedAt antigo mantido, arquivo intocado)`,
+  )
 }
 
 main().catch((err) => {
