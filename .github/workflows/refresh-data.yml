@@ -1,0 +1,43 @@
+name: Refresh Data
+
+on:
+  # Disparo manual via API (botão "🔄 Atualizar Dados" em /admin, ver
+  # worker/index.js -- POST /admin/trigger-refresh) ou manualmente pela aba
+  # Actions do GitHub. Sem trigger de push/schedule de propósito -- é uma
+  # ação explícita, não automática.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Instala Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Instala dependências
+        run: npm ci
+
+      # Identidade do bot do Actions -- git config LOCAL (sem --global, só
+      # pro checkout deste job), nunca do usuário real. scripts/refresh-all.js
+      # não mexe em identidade nenhuma de propósito (localmente, quem roda
+      # `npm run refresh` já tem a própria identidade configurada).
+      - name: Configura identidade do bot do Actions
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # MESMO script usado localmente (`npm run refresh`) -- sync dos 3
+      # catálogos + commit/push automático se algo mudou. Esse push, se
+      # acontecer, dispara o workflow de deploy (.github/workflows/deploy.yml)
+      # sozinho, sem nenhuma ligação explícita necessária aqui.
+      - name: Roda o refresh (sync + commit + push se houver mudança)
+        run: npm run refresh
