@@ -21,9 +21,10 @@
 // (20+50+80=150, cumulativo -- soma de TODOS os tiers alcançados, não só o
 // mais alto) -- ver src/utils/minerSets.ts pra fórmula completa.
 
-import { writeFileSync, mkdirSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { writeJsonIfChanged } from './lib/writeJsonIfChanged.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
@@ -63,14 +64,18 @@ async function main() {
   const output = { generatedAt: new Date().toISOString(), total: data.total, sets }
 
   mkdirSync(DATA_DIR, { recursive: true })
-  writeFileSync(OUTPUT_PATH, JSON.stringify(output, null, 2))
+  const { written } = writeJsonIfChanged(OUTPUT_PATH, output, { space: 2 })
 
   const rewardTypes = [...new Set(sets.map((s) => s.rewardType))]
   console.log('')
   console.log('--- resumo ---')
   console.log(`sets processados: ${sets.length}`)
   console.log(`tipos de recompensa encontrados: ${rewardTypes.join(', ')}`)
-  console.log(`miner-sets.json salvo em ${OUTPUT_PATH}`)
+  console.log(
+    written
+      ? `miner-sets.json salvo em ${OUTPUT_PATH} (reescrito -- catálogo mudou)`
+      : `miner-sets.json: sem mudança real -- generatedAt antigo mantido, arquivo intocado`,
+  )
 }
 
 main().catch((err) => {

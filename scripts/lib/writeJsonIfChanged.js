@@ -31,8 +31,11 @@ function withoutKey(obj, key) {
 // Lê o arquivo já salvo (se existir e for JSON válido) e compara com
 // `newData` ignorando `ignoreKey` nos dois lados. Só grava se for
 // realmente diferente -- devolve { written: boolean } pro chamador
-// reportar no resumo.
-export function writeJsonIfChanged(filePath, newData, { ignoreKey = 'generatedAt' } = {}) {
+// reportar no resumo. `space` repassado direto pro JSON.stringify final
+// (undefined = minificado, como miners.json/racks.json; 2 = com indentação,
+// como miner-sets.json já usava antes) -- preserva a formatação que cada
+// arquivo já tinha, a comparação em si nunca depende de espaçamento.
+export function writeJsonIfChanged(filePath, newData, { ignoreKey = 'generatedAt', space } = {}) {
   let previous = null
   if (existsSync(filePath)) {
     try {
@@ -48,6 +51,6 @@ export function writeJsonIfChanged(filePath, newData, { ignoreKey = 'generatedAt
     return { written: false }
   }
 
-  writeFileSync(filePath, JSON.stringify(newData))
+  writeFileSync(filePath, JSON.stringify(newData, null, space))
   return { written: true }
 }
