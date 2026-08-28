@@ -1,3 +1,5 @@
+import { withBase } from '../utils/withBase'
+
 export interface Hamster {
   slug: string
   name: string
@@ -12,7 +14,13 @@ export interface Hamster {
 
 // Imagens baixadas uma única vez para public/hamsters/, todas da mesma fonte
 // (ariel-ruiz.github.io), pra manter estilo visual consistente entre os hamsters.
-const local = (fileName: string | null) => () => (fileName ? `/hamsters/${fileName}` : null)
+// Bug real corrigido (GitHub Pages, base path /rollercoin-dashboard/):
+// campo de DADO com caminho absoluto-raiz, não um fetch nem um <img src>
+// hardcoded no JSX -- ficou fora da varredura anterior por isso. withBase()
+// aqui, na ÚNICA fábrica usada por TODOS os 29 hamsters, corrige os 29 de
+// uma vez (mesmo princípio de resolveAssetUrl.ts/withImageBase: corrigir na
+// origem do dado, não em cada consumidor).
+const local = (fileName: string | null) => () => (fileName ? withBase(`/hamsters/${fileName}`) : null)
 
 export const HAMSTERS: Hamster[] = [
   { slug: 'cowham', name: 'Cowham', stats: { health: 40, strength: 30, luck: 40 }, survivalAbilityBonus: 0, abilitiesText: ['10% Experiência'], ultimateText: null, generation: 1, levelCount: 6, imageUrl: local('cowham.gif') },
