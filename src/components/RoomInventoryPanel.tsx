@@ -1,10 +1,12 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import Card from './Card'
 import SortDropdown, { type SortDropdownOption } from './SortDropdown'
+import AddInventoryModal from './AddInventoryModal'
 import { formatPower } from '../utils/formatPower'
 import { getMergeLevelColor } from '../utils/minerMergeCalculator'
 import { resolveAssetUrl } from '../utils/resolveAssetUrl'
 import type { EnrichedMinerEntry } from '../hooks/useMinersInventoryImport'
+import type { HypotheticalAddItem } from '../hooks/useHypotheticalInventory'
 
 // MIME custom (Prompt 73, drag-and-drop) -- carrega só a KEY da entrada
 // arrastada (RoomRacksLayer resolve a entry completa via essa key contra o
@@ -125,6 +127,11 @@ function MinerCard({
     >
       <div className="relative flex h-20 items-center justify-center bg-slate-900 p-2">
         <RarityBadge level={entry.matchedLevel} />
+        {entry.isHypothetical && (
+          <span className="absolute right-1 top-1 rounded bg-amber-500 px-1 py-0.5 text-[8px] font-bold uppercase tracking-wide text-slate-950">
+            Teste
+          </span>
+        )}
         {entry.image ? (
           <img src={entry.image} alt={entry.name} className="max-h-full max-w-full object-contain pointer-events-none" />
         ) : (
@@ -150,13 +157,18 @@ export default function RoomInventoryPanel({
   draggedEntryKey,
   onDragStartEntry,
   onDragEndEntry,
+  onAddHypothetical,
 }: {
   entries: EnrichedMinerEntry[]
   remainingByEntryKey?: Map<string, number>
   draggedEntryKey?: string | null
   onDragStartEntry?: (entry: EnrichedMinerEntry) => void
   onDragEndEntry?: () => void
+  // Callback do modal "+" (Prompt 76) -- opcional só por simetria com o
+  // resto das props de callback aqui; sempre fornecido pelo Simulador.
+  onAddHypothetical?: (items: HypotheticalAddItem[]) => void
 }) {
+  const [addModalOpen, setAddModalOpen] = useState(false)
   const [searchText, setSearchText] = useState('')
   const [sortOption, setSortOption] = useState<SortOption>('poder_desc')
   const [widthFilter, setWidthFilter] = useState<Set<number>>(() => new Set([1, 2]))
@@ -228,7 +240,11 @@ export default function RoomInventoryPanel({
   const clampedPage = Math.min(page, pageCount - 1)
   const pageEntries = filteredSorted.slice(clampedPage * perRow, clampedPage * perRow + perRow)
 
-  if (entries.length === 0) return null
+  // Prompt 76: painel agora sempre visível (antes escondia tudo, inclusive
+  // o botão "+", enquanto nada tivesse sido colado) -- testar um item
+  // hipotético não deveria depender de já ter colado inventário real
+  // primeiro. Estado vazio já tratado mais abaixo ("Nenhum minerador
+  // encontrado com esses filtros").
 
   return (
     <Card title="Inventário Importado" className="mt-4">
@@ -326,16 +342,15 @@ export default function RoomInventoryPanel({
           </button>
         </div>
 
-        {/* Placeholder visual -- vai abrir busca no catálogo público
-            (miners.json) pra adicionar hipoteticamente um minerador que o
-            jogador não possui à sala simulada (meio caminho entre o
-            inventário real e o Auto-Otimizador futuro). Sem funcionalidade
-            ainda, só o botão no lugar certo (Prompt 59). */}
+        {/* Abre o modal de adicionar item hipotético (Prompt 76) -- busca
+            no catálogo completo (miners.json/racks.json), independente do
+            que o jogador possui de verdade. Placeholder desde o Prompt 59,
+            implementado agora. */}
         <button
           type="button"
-          disabled
-          title="Buscar minerador para testar (em breve)"
-          className="flex h-7 w-7 shrink-0 cursor-not-allowed items-center justify-center rounded-full bg-indigo-600/40 text-sm font-bold text-white/70"
+          onClick={() => setAddModalOpen(true)}
+          title="Adicionar minerador ou consultar rack pra testar hipoteticamente"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white hover:bg-indigo-500"
         >
           +
         </button>
@@ -369,6 +384,13 @@ export default function RoomInventoryPanel({
           </div>
         )}
       </div>
+
+      {addModalOpen && (
+        <AddInventoryModal
+          onAdd={(items) => onAddHypothetical?.(items)}
+          onClose={() => setAddModalOpen(false)}
+        />
+      )}
     </Card>
   )
 }

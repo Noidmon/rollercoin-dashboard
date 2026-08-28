@@ -56,6 +56,10 @@ export function buildMinerFromInventoryEntry(
     // drag-and-drop, os dois caminhos que chamam essa função), nunca a
     // base real já instalada desde o clone inicial de simRoom.
     fromInventory: true,
+    // Propaga a marca de hipotético (Prompt 76) -- garante que
+    // computeRemainingInventory nunca desconte um item hipotético do pool
+    // REAL do mesmo nome+nível, e vice-versa.
+    isHypothetical: entry.isHypothetical,
   }
 }
 
@@ -83,6 +87,14 @@ export function buildMinerFromInventoryEntry(
 // 3 pontos que adicionam a simRoom.miners a partir do inventário
 // (buildMinerFromInventoryEntry aqui, usado por modal+drag-and-drop; e
 // buildFinalMiners em autoOptimizer.ts, via origin==='inventory').
+//
+// Prompt 76 (itens hipotéticos, modal "+"): a chave de uso agora inclui
+// isHypothetical -- um minerador REAL "Bread" e um HIPOTÉTICO "Bread" do
+// MESMO nome+nível são pools totalmente separados (nunca descontam um do
+// outro), mesmo que fisicamente sejam miners com o mesmo nome/nível
+// dentro de simRoom.miners. Sem essa distinção, usar 1 cópia hipotética
+// erradamente descontaria do "restam" do item REAL de mesmo nome (ou
+// vice-versa).
 export function computeRemainingInventory(
   simMiners: RoomMinerInstance[],
   entries: EnrichedMinerEntry[],
@@ -90,14 +102,14 @@ export function computeRemainingInventory(
   const usedByNameLevel = new Map<string, number>()
   for (const m of simMiners) {
     if (!m.name || !m.fromInventory) continue
-    const key = `${m.name}|${m.level ?? 0}`
+    const key = `${m.name}|${m.level ?? 0}|${m.isHypothetical ? 1 : 0}`
     usedByNameLevel.set(key, (usedByNameLevel.get(key) ?? 0) + 1)
   }
 
   const remaining = new Map<string, number>()
   for (const entry of entries) {
     const level = entry.matchedLevel === 0 ? 0 : entry.matchedLevel - 1
-    const used = usedByNameLevel.get(`${entry.name}|${level}`) ?? 0
+    const used = usedByNameLevel.get(`${entry.name}|${level}|${entry.isHypothetical ? 1 : 0}`) ?? 0
     remaining.set(entry.key, Math.max(0, entry.quantity - used))
   }
   return remaining

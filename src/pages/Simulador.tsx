@@ -16,6 +16,7 @@ import SimRackModal from '../components/SimRackModal'
 import { roomConfigToRackPlacements } from '../utils/roomLayout'
 import { computeRemainingInventory } from '../utils/simRoom'
 import { useMinersInventoryImport, type EnrichedMinerEntry } from '../hooks/useMinersInventoryImport'
+import { useHypotheticalInventory } from '../hooks/useHypotheticalInventory'
 import { useAutoOptimizer, type LiveOptimizerSummary, type RoomTab } from '../hooks/useAutoOptimizer'
 import type { PlayerData } from '../context/PlayerContext'
 import type { OptimizerMode, OptimizerPriority } from '../utils/autoOptimizer'
@@ -375,7 +376,15 @@ function RoomVisualization({
 function SimuladorContent({ playerData }: { playerData: PlayerData }) {
   const { pasteText, setPasteText, entries, unrecognizedCount, handleImport } =
     useMinersInventoryImport()
+  // Auto-Otimizador usa SÓ `entries` (real, colado) -- itens hipotéticos
+  // (Prompt 76) nunca entram no pool de candidatos automáticos, de
+  // propósito: o Auto-Otimizador nunca sugere "comprar" nada, só reorganiza
+  // o que a pessoa já possui (filosofia documentada desde o início em
+  // autoOptimizer.ts); deixar o otimizador escolher automaticamente um
+  // item que o jogador não tem quebraria essa garantia.
   const optimizerState = useAutoOptimizer(playerData, entries)
+  const hypothetical = useHypotheticalInventory()
+  const allEntries = [...entries, ...hypothetical.entries]
 
   // Drag-and-drop do inventário -> célula vazia da sala (Prompt 73) --
   // elevado até aqui porque o card arrastável (RoomInventoryPanel) e o
@@ -385,7 +394,21 @@ function SimuladorContent({ playerData }: { playerData: PlayerData }) {
   // lido de forma confiável no evento `drop` em todo navegador, não
   // durante dragover, então não dá pra usá-lo sozinho pro highlight.
   const [draggedEntry, setDraggedEntry] = useState<EnrichedMinerEntry | null>(null)
-  const remainingByEntryKey = computeRemainingInventory(optimizerState.simRoom.miners, entries)
+  // allEntries (real + hipotético) -- modal de rack e drag-and-drop
+  // precisam poder usar os DOIS pools; computeRemainingInventory já separa
+  // por isHypothetical internamente (Prompt 76), então não mistura.
+  const remainingByEntryKey = computeRemainingInventory(optimizerState.simRoom.miners, allEntries)
+
+  // "Resetar Simulação" também descarta os itens hipotéticos por completo
+  // (não só zera o quanto foi usado) -- mais consistente com o resto do
+  // reset, que já joga fora TUDO que não é a sala real (edições manuais +
+  // resultado do otimizador). Hipotético só existe pra testar dentro desta
+  // sessão de simulação; não faz sentido sobreviver a um reset que volta
+  // tudo mais ao estado real.
+  function handleResetSimulation() {
+    optimizerState.resetSimulation()
+    hypothetical.reset()
+  }
 
   const optimizer: OptimizerControlsProps = {
     priority: optimizerState.priority,
@@ -415,12 +438,12 @@ function SimuladorContent({ playerData }: { playerData: PlayerData }) {
           activeTab={optimizerState.activeTab}
           onTabChange={optimizerState.setActiveTab}
           simRoom={optimizerState.simRoom}
-          inventory={entries}
+          inventory={allEntries}
           onSwapMiner={optimizerState.swapMiner}
           onRemoveMiner={optimizerState.removeMiner}
           onDismountRackMiners={optimizerState.dismountRackMiners}
           onDismountRack={optimizerState.dismountRack}
-          onResetSimulation={optimizerState.resetSimulation}
+          onResetSimulation={handleResetSimulation}
           draggedEntry={draggedEntry}
         />
       </div>
@@ -428,11 +451,12 @@ function SimuladorContent({ playerData }: { playerData: PlayerData }) {
       <AutoOptimizerResults result={optimizerState.result} />
 
       <RoomInventoryPanel
-        entries={entries}
+        entries={allEntries}
         remainingByEntryKey={remainingByEntryKey}
         draggedEntryKey={draggedEntry?.key ?? null}
         onDragStartEntry={setDraggedEntry}
         onDragEndEntry={() => setDraggedEntry(null)}
+        onAddHypothetical={hypothetical.addItems}
       />
     </div>
   )

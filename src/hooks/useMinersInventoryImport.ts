@@ -19,6 +19,12 @@ export interface EnrichedMinerEntry {
   image: string | null
   quantity: number
   matchedLevel: number
+  // Adicionado via o modal "+" (Prompt 76) pra testar hipoteticamente um
+  // minerador que o jogador NÃO possui -- nunca vem do texto colado.
+  // Undefined/false pra entradas reais. Usado em vários lugares (badge
+  // visual no card, computeRemainingInventory) pra nunca misturar o pool
+  // hipotético com o pool real do mesmo nome+nível.
+  isHypothetical?: boolean
 }
 
 // Estado do inventário colado (Simulador) compartilhado entre o campo de

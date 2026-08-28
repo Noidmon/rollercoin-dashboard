@@ -39,6 +39,11 @@ export interface Miner {
   // (simRoom.ts) pra descontar do "restam N" só cópias realmente consumidas
   // nesta sessão, não a base real já instalada antes de qualquer edição.
   fromInventory?: boolean
+  // Marca que essa instância veio de um item HIPOTÉTICO (Prompt 76, modal
+  // "+") -- o jogador não possui de verdade, só está testando o impacto.
+  // Combinado com fromInventory pra computeRemainingInventory nunca
+  // misturar o pool hipotético com o pool real do mesmo nome+nível.
+  isHypothetical?: boolean
 }
 
 export interface Rack {
