@@ -16,11 +16,12 @@ import ScaledRoomCanvas from '../components/ScaledRoomCanvas'
 import LeagueBadge from '../components/LeagueBadge'
 import SimRackModal from '../components/SimRackModal'
 import { roomConfigToRackPlacements } from '../utils/roomLayout'
-import { computeRemainingInventory } from '../utils/simRoom'
+import { computeRemainingInventory, computeRemainingRackInventory } from '../utils/simRoom'
 import { useMinersInventoryImport, type EnrichedMinerEntry } from '../hooks/useMinersInventoryImport'
 import { useHypotheticalInventory } from '../hooks/useHypotheticalInventory'
+import { useHypotheticalRackInventory } from '../hooks/useHypotheticalRackInventory'
 import { useRoomRemovedInventory } from '../hooks/useRoomRemovedInventory'
-import { useRemovedRacks, type RemovedRackEntry } from '../hooks/useRemovedRacks'
+import { useRemovedRacks, type RackInventoryOption } from '../hooks/useRemovedRacks'
 import { useAutoOptimizer, type LiveOptimizerSummary, type RoomTab } from '../hooks/useAutoOptimizer'
 import type { PlayerData } from '../context/PlayerContext'
 import type { OptimizerMode, OptimizerPriority } from '../utils/autoOptimizer'
@@ -193,9 +194,9 @@ function RoomVisualization({
   onDismountRack,
   onResetSimulation,
   draggedEntry,
-  removedRackEntries,
+  rackOptions,
   draggedRack,
-  onReinstallRack,
+  onReinstallRackOption,
 }: {
   playerData: PlayerData
   pasteText: string
@@ -217,12 +218,14 @@ function RoomVisualization({
   // Drag-and-drop do inventário (Prompt 73) -- ver comentário em
   // RoomRacksLayer.tsx. undefined/null fora de arraste.
   draggedEntry: EnrichedMinerEntry | null
-  // Recolocação de rack desmontada (Prompt 84) -- 2 gatilhos (clique num
-  // slot vazio abre o picker, ou drag-and-drop de uma linha da aba RACKS),
-  // ambos convergindo pra onReinstallRack. Ver RoomEmptyRackSlotsLayer.
-  removedRackEntries: RemovedRackEntry[]
-  draggedRack: RemovedRackEntry | null
-  onReinstallRack: (rackInstanceId: string, roomLevel: number, x: number, y: number) => void
+  // Recolocação de rack (Prompt 84 real + Prompt 85 hipotética) -- 2
+  // gatilhos (clique num slot vazio abre o picker, ou drag-and-drop de uma
+  // linha da aba RACKS), ambos convergindo pra onReinstallRackOption.
+  // `rackOptions` já vem UNIFICADA (Simulador.tsx combina os 2 pools) --
+  // ver RoomEmptyRackSlotsLayer/RackReinstallPicker.
+  rackOptions: RackInventoryOption[]
+  draggedRack: RackInventoryOption | null
+  onReinstallRackOption: (key: string, roomLevel: number, x: number, y: number) => void
 }) {
   const realPlacements = roomConfigToRackPlacements(playerData.roomConfig)
   const unlockedLevels = new Set(realPlacements.map((p) => p.roomLevel))
@@ -254,8 +257,8 @@ function RoomVisualization({
 
   const remainingByEntryKey = computeRemainingInventory(simRoom.miners, inventory)
 
-  function handleReinstallAtSlot(rackInstanceId: string, x: number, y: number) {
-    onReinstallRack(rackInstanceId, selectedLevel, x, y)
+  function handleReinstallAtSlot(key: string, x: number, y: number) {
+    onReinstallRackOption(key, selectedLevel, x, y)
     setRackSlotPicker(null)
   }
 
@@ -360,7 +363,7 @@ function RoomVisualization({
                   onSlotClick={showingSimulation ? (x, y) => setRackSlotPicker({ x, y }) : undefined}
                   onDropRack={
                     showingSimulation && draggedRack
-                      ? (x, y) => onReinstallRack(draggedRack.key, selectedLevel, x, y)
+                      ? (x, y) => onReinstallRackOption(draggedRack.key, selectedLevel, x, y)
                       : undefined
                   }
                 />
@@ -405,8 +408,8 @@ function RoomVisualization({
 
       {rackSlotPicker && (
         <RackReinstallPicker
-          entries={removedRackEntries}
-          onPick={(rackInstanceId) => handleReinstallAtSlot(rackInstanceId, rackSlotPicker.x, rackSlotPicker.y)}
+          entries={rackOptions}
+          onPick={(key) => handleReinstallAtSlot(key, rackSlotPicker.x, rackSlotPicker.y)}
           onClose={() => setRackSlotPicker(null)}
         />
       )}
@@ -424,16 +427,51 @@ function SimuladorContent({ playerData }: { playerData: PlayerData }) {
   // rack, exatamente como hypothetical já é elevado até aqui.
   const roomRemovedInventory = useRoomRemovedInventory()
   const removedRacks = useRemovedRacks()
+  const hypotheticalRacks = useHypotheticalRackInventory()
   // Auto-Otimizador usa `entries` (real, colado) + o pool de MINERS
   // removidos da sala -- os dois são posse REAL, então elegíveis a virar
   // candidato de novo (reorganizar o que a pessoa já possui, filosofia
   // documentada desde o início em autoOptimizer.ts). Itens HIPOTÉTICOS
-  // (Prompt 76) continuam de fora de propósito -- o Auto-Otimizador nunca
-  // sugere "comprar" nada que o jogador não tem de verdade.
+  // (Prompt 76/85, miner OU rack) continuam de fora de propósito -- o
+  // Auto-Otimizador nunca sugere "comprar" nada que o jogador não tem de
+  // verdade. Racks hipotéticas em particular nem PRECISARIAM desse filtro
+  // -- o otimizador nunca toca em racks (só reposiciona miners, ver
+  // useAutoOptimizer.ts), então já ficam de fora estruturalmente.
   const inventoryForOptimizer = [...entries, ...roomRemovedInventory.entries]
-  const optimizerState = useAutoOptimizer(playerData, inventoryForOptimizer, roomRemovedInventory, removedRacks)
+  const optimizerState = useAutoOptimizer(
+    playerData,
+    inventoryForOptimizer,
+    roomRemovedInventory,
+    removedRacks,
+    hypotheticalRacks,
+  )
   const hypothetical = useHypotheticalInventory()
   const allEntries = [...entries, ...hypothetical.entries, ...roomRemovedInventory.entries]
+
+  // Lista UNIFICADA de racks disponíveis pra recolocar (Prompt 85) -- real
+  // desmontada (sempre "remaining" undefined, 1 disponível enquanto está no
+  // pool) + hipotética (remaining calculado ao vivo contra simRoom.racks).
+  // Não deve haver 2 sistemas de colocação paralelos -- o picker/drag-and-
+  // drop (RackReinstallPicker/RoomEmptyRackSlotsLayer) só conhece essa
+  // forma única, nunca os hooks de origem.
+  const remainingByRackKey = computeRemainingRackInventory(optimizerState.simRoom.racks, hypotheticalRacks.entries)
+  const rackOptions: RackInventoryOption[] = [
+    ...removedRacks.entries.map((e) => ({
+      key: e.key,
+      name: e.rack.name ?? e.rack._id,
+      bonus: e.rack.bonus,
+      image: e.image,
+      isHypothetical: false,
+    })),
+    ...hypotheticalRacks.entries.map((e) => ({
+      key: e.key,
+      name: e.name,
+      bonus: e.bonus,
+      image: e.image,
+      isHypothetical: true,
+      remaining: remainingByRackKey.get(e.key) ?? e.quantity,
+    })),
+  ]
 
   // Drag-and-drop do inventário -> célula vazia da sala (Prompt 73) --
   // elevado até aqui porque o card arrastável (RoomInventoryPanel) e o
@@ -446,7 +484,7 @@ function SimuladorContent({ playerData }: { playerData: PlayerData }) {
   // Mesma elevação, pro 2º gatilho de recolocação de rack (Prompt 84,
   // arrastar uma linha da aba RACKS até um slot vazio da sala) -- mesmo
   // motivo (RoomInventoryPanel e RoomVisualization são irmãos).
-  const [draggedRack, setDraggedRack] = useState<RemovedRackEntry | null>(null)
+  const [draggedRack, setDraggedRack] = useState<RackInventoryOption | null>(null)
   // allEntries (real + hipotético) -- modal de rack e drag-and-drop
   // precisam poder usar os DOIS pools; computeRemainingInventory já separa
   // por isHypothetical internamente (Prompt 76), então não mistura.
@@ -461,13 +499,14 @@ function SimuladorContent({ playerData }: { playerData: PlayerData }) {
   function handleResetSimulation() {
     optimizerState.resetSimulation()
     hypothetical.reset()
-    // Prompt 84: reset também zera os 2 pools de "removido da sala" --
+    // Prompt 84/85: reset também zera os 3 pools de "fora da sala real" --
     // mesma filosofia do reset de hipotético (linha acima): simRoom já
     // volta a ser um clone exato do room-config real, então qualquer coisa
     // que só existe FORA de simRoom (hipotético, removidos) precisa do
     // próprio .reset() explícito, senão "sobrevive" ao reset sozinha.
     roomRemovedInventory.reset()
     removedRacks.reset()
+    hypotheticalRacks.reset()
   }
 
   const optimizer: OptimizerControlsProps = {
@@ -505,9 +544,9 @@ function SimuladorContent({ playerData }: { playerData: PlayerData }) {
           onDismountRack={optimizerState.dismountRack}
           onResetSimulation={handleResetSimulation}
           draggedEntry={draggedEntry}
-          removedRackEntries={removedRacks.entries}
+          rackOptions={rackOptions}
           draggedRack={draggedRack}
-          onReinstallRack={optimizerState.reinstallRack}
+          onReinstallRackOption={optimizerState.reinstallRackOption}
         />
       </div>
 
@@ -521,7 +560,8 @@ function SimuladorContent({ playerData }: { playerData: PlayerData }) {
         onDragStartEntry={setDraggedEntry}
         onDragEndEntry={() => setDraggedEntry(null)}
         onAddHypothetical={hypothetical.addItems}
-        removedRacks={removedRacks.entries}
+        onAddHypotheticalRacks={hypotheticalRacks.addItems}
+        rackOptions={rackOptions}
         draggedRackKey={draggedRack?.key ?? null}
         onDragStartRack={setDraggedRack}
         onDragEndRack={() => setDraggedRack(null)}

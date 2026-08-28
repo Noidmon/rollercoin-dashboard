@@ -6,17 +6,17 @@ import { getMinerBonusAtLevel, getMinerPowerAtLevel, getRoomDedupMinerId } from 
 import { isNameInAnySet, type MinerSetsData } from '../utils/minerSets'
 import type { MinersData } from '../types/miner'
 import type { HypotheticalAddItem } from '../hooks/useHypotheticalInventory'
+import type { HypotheticalRackAddItem } from '../hooks/useHypotheticalRackInventory'
 
 // Modal "+" do painel de Inventário Importado (Prompt 76) -- testar
-// hipoteticamente o impacto de um MINERADOR que o jogador não possui,
-// buscando no catálogo completo (miners.json, 1680 itens) em vez do que
-// foi colado. Também mostra o catálogo de RACKS (racks.json, 72 itens)
-// pra consulta de ficha técnica -- mas só MINERADORES podem ser
-// efetivamente adicionados (ver limitação documentada no topo de
-// Simulador.tsx: não existe hoje nenhum jeito de colocar uma rack NOVA
-// num espaço vazio da sala, só trocar/preencher miners dentro de racks já
-// existentes -- então uma rack hipotética não teria como ser "usada" na
-// simulação ainda).
+// hipoteticamente o impacto de um MINERADOR ou RACK que o jogador não
+// possui, buscando no catálogo completo (miners.json/racks.json) em vez do
+// que foi colado/está instalado. Racks hipotéticas (Prompt 85) usam o
+// MESMO mecanismo de colocação das racks reais desmontadas (picker de slot
+// vazio + drag-and-drop, ver RackReinstallPicker/RoomEmptyRackSlotsLayer)
+// -- antes disso existir, não havia jeito nenhum de colocar QUALQUER rack
+// nova num espaço vazio da sala, então uma rack hipotética não tinha como
+// ser "usada" (limitação já removida, ver useHypotheticalRackInventory.ts).
 interface RackCatalogItem {
   rackId: string
   name: string
@@ -128,10 +128,25 @@ function CatalogCard({
       }`}
       style={{ width: CARD_WIDTH_PX }}
     >
-      <button
-        type="button"
+      {/* Bug real corrigido (Prompt 85): era um <button> (seleciona o card)
+          com outro <button> (steppers) ANINHADO dentro -- HTML inválido
+          (button não pode conter button), causava warning de hidratação e
+          risco de comportamento inconsistente entre navegadores. Trocado
+          pelo mesmo elemento interativo de sempre só que como <div
+          role="button">, com onKeyDown pra manter o comportamento de
+          teclado (Enter/Espaço) que um <button> real já dava de graça --
+          nenhum clique (selecionar card, +, −, desselecionar em 1) mudou. */}
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onSelect}
-        className="relative flex h-20 w-full items-center justify-center bg-slate-900 p-2"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onSelect()
+          }
+        }}
+        className="relative flex h-20 w-full cursor-pointer items-center justify-center bg-slate-900 p-2"
       >
         <MinerBadges level={selection.level} isInSet={isInSet} />
         {image ? (
@@ -168,7 +183,7 @@ function CatalogCard({
             </button>
           </div>
         )}
-      </button>
+      </div>
 
       {showLevelRow && (
         <div
@@ -206,10 +221,12 @@ function CatalogCard({
 export default function AddInventoryModal({
   setsData,
   onAdd,
+  onAddRacks,
   onClose,
 }: {
   setsData: MinerSetsData | null
   onAdd: (items: HypotheticalAddItem[]) => void
+  onAddRacks: (items: HypotheticalRackAddItem[]) => void
   onClose: () => void
 }) {
   const [minersData, setMinersData] = useState<MinersData | null>(null)
@@ -218,6 +235,15 @@ export default function AddInventoryModal({
   const [searchText, setSearchText] = useState('')
   const [sortOption, setSortOption] = useState<SortOption>('bonus_desc')
   const [selected, setSelected] = useState<Map<string, Selection>>(new Map())
+  // Mapa PRÓPRIO pra seleção de racks (Prompt 85) -- separado do de miners
+  // de propósito: os 2 catálogos (miners.json/racks.json) têm ids em
+  // namespaces diferentes, então usar o MESMO Map arriscaria uma colisão
+  // rara de id entre um miner e uma rack (nunca confirmada, mas sem
+  // necessidade de arriscar) e, mais importante, os itens resultantes têm
+  // formato totalmente diferente (HypotheticalAddItem vs
+  // HypotheticalRackAddItem) -- mais simples manter 2 fontes de verdade
+  // que reconciliar 1 só na hora de montar handleAdd.
+  const [selectedRacks, setSelectedRacks] = useState<Map<string, Selection>>(new Map())
 
   useEffect(() => {
     let cancelled = false
@@ -285,30 +311,65 @@ export default function AddInventoryModal({
     })
   }
 
-  const selectedCount = selected.size
+  // Trio equivalente pra racks (Prompt 85) -- level nunca muda aqui (rack
+  // não tem merge/nível, só existe no objeto Selection por reaproveitar a
+  // mesma interface de miner) -- CatalogCard já nem mostra a fileira de
+  // nível pra rack (availableLevels sempre length 1 nesse modo).
+  function toggleSelectRack(rackId: string) {
+    setSelectedRacks((prev) => {
+      const next = new Map(prev)
+      if (next.has(rackId)) next.delete(rackId)
+      else next.set(rackId, { quantity: 1, level: 0 })
+      return next
+    })
+  }
+
+  function setRackQuantity(rackId: string, qty: number) {
+    setSelectedRacks((prev) => {
+      const current = prev.get(rackId)
+      if (!current) return prev
+      return new Map(prev).set(rackId, { ...current, quantity: qty })
+    })
+  }
+
+  const selectedCount = mode === 'miners' ? selected.size : selectedRacks.size
 
   function handleAdd() {
-    if (mode !== 'miners') {
-      onClose()
-      return
+    if (mode === 'miners') {
+      const items: HypotheticalAddItem[] = []
+      for (const miner of minerItems) {
+        const selection = selected.get(miner.id)
+        if (!selection || selection.quantity <= 0) continue
+        items.push({
+          catalogId: miner.id,
+          roomDedupMinerId: getRoomDedupMinerId(miner, selection.level),
+          name: miner.name,
+          power: getMinerPowerAtLevel(miner, selection.level),
+          bonus: getMinerBonusAtLevel(miner, selection.level),
+          cells: miner.cells,
+          image: miner.image,
+          quantity: selection.quantity,
+          level: selection.level,
+        })
+      }
+      onAdd(items)
+    } else {
+      const items: HypotheticalRackAddItem[] = []
+      for (const rack of rackItems) {
+        const selection = selectedRacks.get(rack.rackId)
+        if (!selection || selection.quantity <= 0) continue
+        items.push({
+          rackId: rack.rackId,
+          name: rack.name,
+          bonus: rack.bonus,
+          image: rack.image,
+          widthCells: rack.width,
+          heightCells: rack.height,
+          quantity: selection.quantity,
+        })
+      }
+      onAddRacks(items)
     }
-    const items: HypotheticalAddItem[] = []
-    for (const miner of minerItems) {
-      const selection = selected.get(miner.id)
-      if (!selection || selection.quantity <= 0) continue
-      items.push({
-        catalogId: miner.id,
-        roomDedupMinerId: getRoomDedupMinerId(miner, selection.level),
-        name: miner.name,
-        power: getMinerPowerAtLevel(miner, selection.level),
-        bonus: getMinerBonusAtLevel(miner, selection.level),
-        cells: miner.cells,
-        image: miner.image,
-        quantity: selection.quantity,
-        level: selection.level,
-      })
-    }
-    onAdd(items)
     onClose()
   }
 
@@ -316,7 +377,7 @@ export default function AddInventoryModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-800 bg-slate-950/60 px-4 py-3">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-white">Adicionar Miner</h2>
+          <h2 className="text-sm font-bold uppercase tracking-wide text-white">Adicionar Miner/Rack</h2>
           <button
             type="button"
             onClick={onClose}
@@ -372,13 +433,6 @@ export default function AddInventoryModal({
           </div>
         </div>
 
-        {mode === 'racks' && (
-          <p className="border-b border-slate-800 bg-amber-500/10 px-4 py-2 text-xs text-amber-200">
-            Racks são só pra consulta da ficha técnica -- ainda não é possível adicionar uma rack nova a um espaço
-            vazio da sala na simulação, só trocar/preencher mineradores em racks que já existem.
-          </p>
-        )}
-
         {/* Prompt 79: scroll aqui é esperado (até 120 cards do catálogo,
             bem mais alto que o espaço disponível) -- não é bug de layout
             (confirmado: o container GERAL do modal, acima, não tem
@@ -421,35 +475,48 @@ export default function AddInventoryModal({
                     />
                   )
                 })
-              : rackItems.slice(0, 120).map((rack) => (
-                  <CatalogCard
-                    key={rack.rackId}
-                    id={rack.rackId}
-                    name={rack.name}
-                    image={rack.image}
-                    cells={rack.cells}
-                    bonus={rack.bonus}
-                    power={null}
-                    isInSet={false}
-                    availableLevels={[{ value: 0, label: 0 }]}
-                    selected={false}
-                    selection={{ quantity: 1, level: 0 }}
-                    onSelect={() => {}}
-                    onQuantityChange={() => {}}
-                    onLevelChange={() => {}}
-                  />
-                ))}
+              : // Rack (Prompt 85): selecionável de verdade agora (stepper de
+                // quantidade funcional) -- availableLevels fica fixo em
+                // [{value:0,label:0}] (length 1) de propósito, então
+                // CatalogCard nunca mostra a fileira de nível pra rack (não é
+                // conceito de rack, só de minerador/merge).
+                rackItems.slice(0, 120).map((rack) => {
+                  const selection = selectedRacks.get(rack.rackId) ?? { quantity: 1, level: 0 }
+                  return (
+                    <CatalogCard
+                      key={rack.rackId}
+                      id={rack.rackId}
+                      name={rack.name}
+                      image={rack.image}
+                      cells={rack.cells}
+                      bonus={rack.bonus}
+                      power={null}
+                      isInSet={false}
+                      availableLevels={[{ value: 0, label: 0 }]}
+                      selected={selectedRacks.has(rack.rackId)}
+                      selection={selection}
+                      onSelect={() => toggleSelectRack(rack.rackId)}
+                      onQuantityChange={(qty) => setRackQuantity(rack.rackId, qty)}
+                      onLevelChange={() => {}}
+                    />
+                  )
+                })}
           </div>
           {mode === 'miners' && minerItems.length > 120 && (
             <p className="mt-3 text-center text-xs text-slate-500">
               Mostrando os 120 primeiros de {minerItems.length} resultados -- refine a busca pra ver outros.
             </p>
           )}
+          {mode === 'racks' && rackItems.length > 120 && (
+            <p className="mt-3 text-center text-xs text-slate-500">
+              Mostrando as 120 primeiras de {rackItems.length} resultados -- refine a busca pra ver outras.
+            </p>
+          )}
         </div>
 
         <div className="flex items-center justify-between gap-3 border-t border-slate-800 bg-slate-950/40 px-4 py-3">
           <p className="text-xs text-slate-500">
-            {mode === 'miners' ? `${selectedCount} selecionado${selectedCount === 1 ? '' : 's'}` : 'Consulta apenas'}
+            {selectedCount} selecionad{selectedCount === 1 ? 'o' : 'os'}
           </p>
           <div className="flex gap-2">
             <button
@@ -462,7 +529,7 @@ export default function AddInventoryModal({
             <button
               type="button"
               onClick={handleAdd}
-              disabled={mode === 'miners' && selectedCount === 0}
+              disabled={selectedCount === 0}
               className="rounded-md bg-indigo-600 px-4 py-2 text-xs font-bold uppercase tracking-wide text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Add

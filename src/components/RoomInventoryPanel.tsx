@@ -7,7 +7,8 @@ import { formatPower } from '../utils/formatPower'
 import { isNameInAnySet, type MinerSetsData } from '../utils/minerSets'
 import type { EnrichedMinerEntry } from '../hooks/useMinersInventoryImport'
 import type { HypotheticalAddItem } from '../hooks/useHypotheticalInventory'
-import type { RemovedRackEntry } from '../hooks/useRemovedRacks'
+import type { HypotheticalRackAddItem } from '../hooks/useHypotheticalRackInventory'
+import type { RackInventoryOption } from '../hooks/useRemovedRacks'
 
 // MIME custom (Prompt 73, drag-and-drop) -- carrega só a KEY da entrada
 // arrastada (RoomRacksLayer resolve a entry completa via essa key contra o
@@ -18,10 +19,11 @@ import type { RemovedRackEntry } from '../hooks/useRemovedRacks'
 // `draggedEntry` elevado a SimuladorContent, não dataTransfer.
 export const DRAG_ENTRY_KEY_MIME = 'application/x-rlc-inventory-entry-key'
 
-// Mesma ideia do MIME de miner acima, pra arrastar uma RACK desmontada
-// (Prompt 84, aba RACKS) até um slot vazio da sala -- carrega a KEY
-// (rack._id) da linha arrastada; o alvo do drop (RoomEmptyRackSlotsLayer)
-// resolve a entry completa contra `removedRacks` que já tem em mãos.
+// Mesma ideia do MIME de miner acima, pra arrastar uma rack (real
+// desmontada OU hipotética, Prompt 84/85, aba RACKS) até um slot vazio da
+// sala -- carrega a KEY da linha arrastada; o alvo do drop
+// (RoomEmptyRackSlotsLayer) resolve a entry completa contra a lista
+// unificada que Simulador.tsx já tem em mãos.
 export const DRAG_RACK_KEY_MIME = 'application/x-rlc-inventory-rack-key'
 
 function formatRackBonus(bonusCentesimos: number): string {
@@ -131,52 +133,61 @@ function MinerCard({
   )
 }
 
-// Card de uma rack DESMONTADA (Prompt 84) -- mesma largura/estrutura visual
-// do MinerCard, mas sem "restam N" (cada rack é uma instância física ÚNICA,
-// não uma quantidade agregável) e sem badge de nível/set (não se aplica a
-// racks). Arrastável pro segundo gatilho de recolocação (drop num slot
-// vazio da sala, ver RoomEmptyRackSlotsLayer) -- sempre arrastável (ao
-// contrário do MinerCard, que desabilita quando `remaining` chega a 0: uma
-// rack desmontada não tem conceito de "esgotar", ela ou está no pool ou já
-// foi reinstalada e saiu dele).
+// Card de uma rack disponível pra recolocar (Prompt 84 real + Prompt 85
+// hipotética) -- mesma largura/estrutura visual do MinerCard, sem badge de
+// nível/set (não se aplica a racks). Rack REAL desmontada é instância
+// física única (sem "restam N", `remaining` vem undefined) -- rack
+// HIPOTÉTICA tem quantidade de verdade (`remaining` definido, mesma regra
+// de desabilitar o arraste em 0 que o MinerCard já usa) e ganha o mesmo
+// badge "Teste" usado pra miner hipotético.
 function RackCard({
   entry,
   isDragged,
   onDragStartRack,
   onDragEndRack,
 }: {
-  entry: RemovedRackEntry
+  entry: RackInventoryOption
   isDragged?: boolean
-  onDragStartRack?: (entry: RemovedRackEntry) => void
+  onDragStartRack?: (entry: RackInventoryOption) => void
   onDragEndRack?: () => void
 }) {
+  const draggable = entry.remaining === undefined || entry.remaining > 0
   return (
     <div
-      draggable
+      draggable={draggable}
       onDragStart={(e) => {
+        if (!draggable) return
         e.dataTransfer.setData(DRAG_RACK_KEY_MIME, entry.key)
         e.dataTransfer.effectAllowed = 'copy'
         onDragStartRack?.(entry)
       }}
       onDragEnd={() => onDragEndRack?.()}
-      className={`shrink-0 cursor-grab overflow-hidden rounded-lg border border-slate-700 bg-slate-800 active:cursor-grabbing ${
-        isDragged ? 'opacity-40' : ''
-      }`}
+      className={`shrink-0 overflow-hidden rounded-lg border border-slate-700 bg-slate-800 transition-opacity ${
+        draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-not-allowed opacity-50'
+      } ${isDragged ? 'opacity-40' : ''}`}
       style={{ width: CARD_WIDTH_PX }}
     >
-      <div className="flex h-20 items-center justify-center bg-slate-900 p-2">
+      <div className="relative flex h-20 items-center justify-center bg-slate-900 p-2">
+        {entry.isHypothetical && (
+          <span className="absolute right-1 top-1 rounded bg-amber-500 px-1 py-0.5 text-[8px] font-bold uppercase tracking-wide text-slate-950">
+            Teste
+          </span>
+        )}
         {entry.image ? (
-          <img src={entry.image} alt={entry.rack.name ?? ''} className="max-h-full max-w-full object-contain pointer-events-none" />
+          <img src={entry.image} alt={entry.name} className="max-h-full max-w-full object-contain pointer-events-none" />
         ) : (
           <span className="text-slate-600">?</span>
         )}
       </div>
-      <p className="truncate px-2 pt-1.5 text-center text-xs font-semibold text-white" title={entry.rack.name ?? entry.rack._id}>
-        {entry.rack.name ?? entry.rack._id}
+      <p className="truncate px-2 pt-1.5 text-center text-xs font-semibold text-white" title={entry.name}>
+        {entry.name}
       </p>
-      <p className="px-2 pb-2 pt-0.5 text-center text-[11px] text-slate-400">
-        Bônus do rack {formatRackBonus(entry.rack.bonus)}
+      <p className="px-2 pb-0.5 pt-0.5 text-center text-[11px] text-slate-400">
+        Bônus do rack {formatRackBonus(entry.bonus)}
       </p>
+      {entry.remaining !== undefined && (
+        <p className="px-2 pb-2 text-center text-[10px] text-slate-500">restam {entry.remaining}</p>
+      )}
     </div>
   )
 }
@@ -189,7 +200,8 @@ export default function RoomInventoryPanel({
   onDragStartEntry,
   onDragEndEntry,
   onAddHypothetical,
-  removedRacks,
+  onAddHypotheticalRacks,
+  rackOptions,
   draggedRackKey,
   onDragStartRack,
   onDragEndRack,
@@ -205,11 +217,14 @@ export default function RoomInventoryPanel({
   // Callback do modal "+" (Prompt 76) -- opcional só por simetria com o
   // resto das props de callback aqui; sempre fornecido pelo Simulador.
   onAddHypothetical?: (items: HypotheticalAddItem[]) => void
-  // Aba RACKS (Prompt 84) -- racks desmontadas nesta sessão, prontas pra
-  // recolocar (clique num slot vazio da sala, ou arrastando a linha daqui).
-  removedRacks?: RemovedRackEntry[]
+  // Idem, pro modo Rack do modal "+" (Prompt 85).
+  onAddHypotheticalRacks?: (items: HypotheticalRackAddItem[]) => void
+  // Aba RACKS (Prompt 84 real + Prompt 85 hipotética) -- lista JÁ
+  // UNIFICADA (Simulador.tsx combina os 2 pools), prontas pra recolocar
+  // (clique num slot vazio da sala, ou arrastando a linha daqui).
+  rackOptions?: RackInventoryOption[]
   draggedRackKey?: string | null
-  onDragStartRack?: (entry: RemovedRackEntry) => void
+  onDragStartRack?: (entry: RackInventoryOption) => void
   onDragEndRack?: () => void
 }) {
   const [addModalOpen, setAddModalOpen] = useState(false)
@@ -282,10 +297,8 @@ export default function RoomInventoryPanel({
 
   const filteredRacks = useMemo(() => {
     const searchLower = searchText.trim().toLowerCase()
-    return (removedRacks ?? []).filter(
-      (e) => !searchLower || (e.rack.name ?? '').toLowerCase().includes(searchLower),
-    )
-  }, [removedRacks, searchText])
+    return (rackOptions ?? []).filter((e) => !searchLower || e.name.toLowerCase().includes(searchLower))
+  }, [rackOptions, searchText])
 
   const pageCount = Math.max(1, Math.ceil(filteredSorted.length / perRow))
   const clampedPage = Math.min(page, pageCount - 1)
@@ -420,8 +433,8 @@ export default function RoomInventoryPanel({
         {activeTab === 'racks' ? (
           filteredRacks.length === 0 ? (
             <p className="rounded-md border border-slate-800 bg-slate-950/40 p-4 text-sm text-slate-500">
-              {(removedRacks ?? []).length === 0
-                ? 'Nenhuma rack desmontada nesta sessão ainda.'
+              {(rackOptions ?? []).length === 0
+                ? 'Nenhuma rack desmontada ou hipotética disponível ainda.'
                 : 'Nenhuma rack encontrada com esse filtro de busca.'}
             </p>
           ) : (
@@ -469,6 +482,7 @@ export default function RoomInventoryPanel({
         <AddInventoryModal
           setsData={setsData}
           onAdd={(items) => onAddHypothetical?.(items)}
+          onAddRacks={(items) => onAddHypotheticalRacks?.(items)}
           onClose={() => setAddModalOpen(false)}
         />
       )}

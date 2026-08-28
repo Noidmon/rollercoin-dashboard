@@ -6,6 +6,7 @@
 // clone local, descartável via "Resetar Simulação".
 import type { Miner as RoomMinerInstance, Rack } from './calculatePower'
 import type { EnrichedMinerEntry } from '../hooks/useMinersInventoryImport'
+import type { HypotheticalRackEntry } from '../hooks/useHypotheticalRackInventory'
 import { isNameInAnySet, type MinerSetsData } from './minerSets'
 import type { PlayerData } from '../context/PlayerContext'
 
@@ -131,6 +132,30 @@ export function computeRemainingInventory(
   for (const entry of entries) {
     const level = entry.matchedLevel === 0 ? 0 : entry.matchedLevel - 1
     const used = usedByNameLevel.get(`${entry.name}|${level}|${originTag(entry)}`) ?? 0
+    remaining.set(entry.key, Math.max(0, entry.quantity - used))
+  }
+  return remaining
+}
+
+// Mesma ideia de computeRemainingInventory, mas pro pool de RACKS
+// hipotéticas (Prompt 85) -- só existe uma origem aqui (nunca "restam N"
+// pra rack real desmontada, que é instância única sem quantidade -- ver
+// useRemovedRacks.ts), então não precisa da chave de 3 vias. Conta quantas
+// racks de cada rackId estão ATUALMENTE em simRoom.racks com
+// isHypothetical=true, subtrai da quantidade escolhida no modal.
+export function computeRemainingRackInventory(
+  simRacks: Rack[],
+  entries: HypotheticalRackEntry[],
+): Map<string, number> {
+  const usedByRackId = new Map<string, number>()
+  for (const r of simRacks) {
+    if (!r.isHypothetical || !r.rack_id) continue
+    usedByRackId.set(r.rack_id, (usedByRackId.get(r.rack_id) ?? 0) + 1)
+  }
+
+  const remaining = new Map<string, number>()
+  for (const entry of entries) {
+    const used = usedByRackId.get(entry.rackId) ?? 0
     remaining.set(entry.key, Math.max(0, entry.quantity - used))
   }
   return remaining

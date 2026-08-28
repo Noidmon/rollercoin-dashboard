@@ -13,6 +13,25 @@ export interface RemovedRackEntry {
   image: string | null
 }
 
+// Lista UNIFICADA pra UI (aba RACKS do inventário, picker de recolocação,
+// drag-and-drop) -- Prompt 85, quando rack HIPOTÉTICA passou a poder ser
+// colocada pelo MESMO mecanismo de rack REAL desmontada. Não deve haver 2
+// sistemas de colocação paralelos (pedido explícito): a UI sempre trabalha
+// com essa forma única, e quem monta a lista (Simulador.tsx) decide como
+// combinar os 2 pools (useRemovedRacks + useHypotheticalRackInventory) --
+// nenhuma das 2 fontes conhece a outra.
+export interface RackInventoryOption {
+  key: string // rack._id (real) ou `hyp-rack-${rackId}` (hipotética) -- nunca colidem (formatos distintos)
+  name: string
+  bonus: number
+  image: string | null
+  isHypothetical: boolean
+  // undefined pra rack real (sempre exatamente 1 disponível enquanto
+  // estiver no pool -- sai de vez ao reinstalar, ver takeOut). Número real
+  // só pra hipotética (pode ter quantidade >1, decrementa ao colocar).
+  remaining?: number
+}
+
 export function useRemovedRacks() {
   const [entries, setEntries] = useState<RemovedRackEntry[]>([])
 

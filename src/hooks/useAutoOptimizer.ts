@@ -26,6 +26,7 @@ import type { MinersData } from '../types/miner'
 import type { EnrichedMinerEntry } from './useMinersInventoryImport'
 import type { useRoomRemovedInventory, RoomRemovalMinerInput } from './useRoomRemovedInventory'
 import type { useRemovedRacks } from './useRemovedRacks'
+import type { useHypotheticalRackInventory, HypotheticalRackEntry } from './useHypotheticalRackInventory'
 import type { PlayerData } from '../context/PlayerContext'
 
 interface RackCatalogImageEntry {
@@ -121,6 +122,11 @@ export function useAutoOptimizer(
   inventory: EnrichedMinerEntry[],
   roomRemovedInventory: ReturnType<typeof useRoomRemovedInventory>,
   removedRacks: ReturnType<typeof useRemovedRacks>,
+  // Prompt 85: só pra reinstallRackOption conseguir resolver se uma "key"
+  // escolhida no picker/drag é uma rack hipotética -- nunca é escrito
+  // diretamente aqui (colocar uma hipotética não consome nada do pool, a
+  // recontagem ao vivo já cuida disso, ver computeRemainingRackInventory).
+  hypotheticalRacks: ReturnType<typeof useHypotheticalRackInventory>,
 ) {
   const [priority, setPriority] = useState<OptimizerPriority>('padrao')
   const [mode, setMode] = useState<OptimizerMode>('preservar_sala')
@@ -269,7 +275,12 @@ export function useAutoOptimizer(
       reportIfOriginallyInstalled(occupant)
     }
     const rack = simRoom.racks.find((r) => r._id === rackInstanceId)
-    if (rack) {
+    // Prompt 85: rack HIPOTÉTICA desmontada NUNCA entra no pool de racks
+    // REAIS removidas -- ela só "desaparece" de volta pro próprio pool
+    // hipotético, via a mesma recontagem ao vivo que já mostra "restam N"
+    // (computeRemainingRackInventory conta direto em simRoom.racks, então
+    // tirá-la daqui já é suficiente -- nenhuma escrita extra necessária).
+    if (rack && !rack.isHypothetical) {
       const image = rack.rack_id ? (racksCatalog?.find((r) => r.rackId === rack.rack_id)?.image ?? null) : null
       // placement removido -- rack fica "sem posição", pronta pra ganhar
       // uma posição nova ao reinstalar (ver reinstallRack).
@@ -287,6 +298,40 @@ export function useAutoOptimizer(
     if (!rack) return
     const placedRack: Rack = { ...rack, placement: { room_level: roomLevel, x, y } }
     setSimRoom((prev) => ({ ...prev, racks: [...prev.racks, placedRack] }))
+  }
+
+  // Coloca uma rack HIPOTÉTICA nova numa posição vazia (Prompt 85) -- ao
+  // contrário de reinstallRack, não "tira" nada de pool nenhum: a
+  // quantidade escolhida no modal é a base fixa, e "restam N" é sempre
+  // recalculado ao vivo contra quantas cópias hipotéticas já estão em
+  // simRoom.racks (mesmo princípio de minerador hipotético). Cada cópia
+  // colocada vira uma instância NOVA com _id sintético próprio (nunca
+  // reaproveita o mesmo _id entre cópias, senão duas colocações da mesma
+  // rack hipotética colidiriam como "a mesma instância" pro resto do app).
+  function placeHypotheticalRack(entry: HypotheticalRackEntry, roomLevel: number, x: number, y: number) {
+    const newRack: Rack = {
+      _id: `hyp-rack-${entry.rackId}-${roomLevel}-${x}-${y}-${Math.random().toString(36).slice(2, 8)}`,
+      name: entry.name,
+      bonus: entry.bonus,
+      rack_id: entry.rackId,
+      rack_info: { width: entry.widthCells, height: entry.heightCells },
+      placement: { room_level: roomLevel, x, y },
+      isHypothetical: true,
+    }
+    setSimRoom((prev) => ({ ...prev, racks: [...prev.racks, newRack] }))
+  }
+
+  // Ponto de entrada ÚNICO do picker/drag-and-drop (Prompt 85) -- resolve
+  // se a "key" escolhida é uma rack REAL desmontada ou uma HIPOTÉTICA e
+  // despacha pra função certa, sem a UI (RackReinstallPicker,
+  // RoomEmptyRackSlotsLayer) precisar saber a diferença entre os 2 pools.
+  function reinstallRackOption(key: string, roomLevel: number, x: number, y: number) {
+    if (removedRacks.entries.some((e) => e.key === key)) {
+      reinstallRack(key, roomLevel, x, y)
+      return
+    }
+    const hyp = hypotheticalRacks.entries.find((e) => e.key === key)
+    if (hyp) placeHypotheticalRack(hyp, roomLevel, x, y)
   }
 
   const liveSummary: LiveOptimizerSummary = useMemo(() => {
@@ -352,6 +397,6 @@ export function useAutoOptimizer(
     removeMiner,
     dismountRackMiners,
     dismountRack,
-    reinstallRack,
+    reinstallRackOption,
   }
 }

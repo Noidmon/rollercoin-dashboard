@@ -1,6 +1,6 @@
 import { allCellsForRoomLevel } from '../data/cellToPixel'
 import { rackPixelBox, RACK_BOX_HEIGHT_PX, RACK_BOX_WIDTH_PX } from '../utils/roomLayout'
-import type { RemovedRackEntry } from '../hooks/useRemovedRacks'
+import type { RackInventoryOption } from '../hooks/useRemovedRacks'
 
 // Camada de posições VAZIAS da sala (Prompt 84 -- 2º gatilho de
 // recolocação de rack desmontada) -- irmã de RoomRacksLayer, não parte
@@ -14,7 +14,10 @@ import type { RemovedRackEntry } from '../hooks/useRemovedRacks'
 interface RoomEmptyRackSlotsLayerProps {
   roomLevel: number
   occupiedXY: Set<string>
-  draggedRack?: RemovedRackEntry | null
+  // Prompt 85: agora pode ser uma rack REAL desmontada ou HIPOTÉTICA --
+  // essa camada só precisa da `key` (ver onDropRack), então o tipo
+  // unificado (RackInventoryOption) já é suficiente sem distinguir aqui.
+  draggedRack?: RackInventoryOption | null
   onSlotClick?: (x: number, y: number) => void
   onDropRack?: (x: number, y: number) => void
 }

@@ -71,6 +71,15 @@ export interface Rack {
     width: number
     height: number
   }
+  // Marca que essa rack veio de um item HIPOTÉTICO (Prompt 85, modal "+",
+  // modo "Rack") -- mesma ideia de RoomMinerInstance.isHypothetical, mas
+  // pro pool de racks (useHypotheticalRackInventory.ts). Usada por
+  // computeRemainingRackInventory (simRoom.ts) pra recontar "restam N" ao
+  // vivo, e por dismountRack (useAutoOptimizer.ts) pra NUNCA empurrar uma
+  // rack hipotética desmontada pro pool de racks REAIS removidas -- ela só
+  // deve "desaparecer" de volta pro próprio pool hipotético (via a mesma
+  // recontagem ao vivo, sem estado extra nenhum).
+  isHypothetical?: boolean
 }
 
 export interface RoomPowerBreakdown {
