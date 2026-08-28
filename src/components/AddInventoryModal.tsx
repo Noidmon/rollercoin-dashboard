@@ -146,7 +146,14 @@ function CatalogCard({
           >
             <button
               type="button"
-              onClick={() => onQuantityChange(Math.max(1, selection.quantity - 1))}
+              onClick={() => {
+                // Em quantidade 1, "−" desseleciona o card (reaproveita
+                // onSelect, que é toggleSelect -- como o card já está
+                // selecionado aqui, o toggle remove a seleção) em vez de
+                // travar em 1 pra sempre.
+                if (selection.quantity <= 1) onSelect()
+                else onQuantityChange(selection.quantity - 1)
+              }}
               className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-700 text-sm font-bold text-white hover:bg-slate-600"
             >
               −
