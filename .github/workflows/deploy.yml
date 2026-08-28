@@ -66,6 +66,10 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # v5 (não v4) de propósito -- v4 roda no runtime Node 20, que o
+      # GitHub já está depreciando (warning "forced to run on Node.js 24");
+      # v5 já roda nativamente em Node 24 (changelog oficial confirma:
+      # "Update Node.js version to 24.x").
       - name: Deploy no GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

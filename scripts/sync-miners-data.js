@@ -162,9 +162,21 @@ async function syncImages(rawMiners) {
 async function syncCraftingPrices() {
   const data = await fetchJson(`${API_BASE}/rollercoin/craftings`)
   mkdirSync(DATA_DIR, { recursive: true })
-  writeFileSync(CRAFTING_PRICES_PATH, JSON.stringify(data.default_component_prices, null, 2))
+  // Escreve incondicionalmente antes -- diferente de miners.json/racks.json/
+  // miner-sets.json, esse arquivo NUNCA teve um `generatedAt` embutido, então
+  // na prática nunca gerou diff falso (JSON.stringify de um objeto igual
+  // produz os MESMOS bytes, git não vê mudança por conteúdo) -- confirmado
+  // no histórico real (só 1 commit desde a criação, apesar de rodar dezenas
+  // de vezes). Ainda assim, mesmo helper aqui por consistência e defesa
+  // (não depender de determinismo incidental, e ganhar o mesmo log
+  // "sem mudança real" dos outros 3 arquivos).
+  const { written } = writeJsonIfChanged(CRAFTING_PRICES_PATH, data.default_component_prices, { space: 2 })
   const tierCount = Object.keys(data.default_component_prices).length
-  console.log(`crafting-prices.json salvo (${tierCount} tiers)`)
+  console.log(
+    written
+      ? `crafting-prices.json salvo (${tierCount} tiers)`
+      : `crafting-prices.json: sem mudança real -- arquivo intocado (${tierCount} tiers)`,
+  )
 }
 
 async function main() {
