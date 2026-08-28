@@ -46,25 +46,42 @@ export default function SortDropdown<T extends string>({
   // botão -- imune a QUALQUER overflow/clipping de ancestral, presente ou
   // futuro, em vez de depender de cada container que usa o dropdown nunca
   // ter overflow não-visible.
+  //
+  // Abrir pra cima quando não há espaço embaixo (Prompt 78): calcula em
+  // DUAS passadas -- a 1a (painel ainda não montado, panelRef.current
+  // null) sempre abre pra baixo por segurança; assim que o painel entra no
+  // DOM, uma 2a passada remede a altura REAL (getBoundingClientRect, não
+  // uma estimativa por nº de opções) e corrige pra cima se não couber
+  // embaixo E houver mais espaço em cima. As duas passadas rodam dentro do
+  // mesmo ciclo de commit síncrono (useLayoutEffect, antes do paint), sem
+  // flicker visível. O guard em computePosition (só chama setPosition se o
+  // valor mudou de verdade) evita loop infinito entre as passadas.
   useLayoutEffect(() => {
     if (!open || !buttonRef.current) return
 
-    function updatePosition() {
+    function computePosition() {
       const rect = buttonRef.current!.getBoundingClientRect()
-      setPosition({
-        top: rect.bottom + 4,
-        left: Math.max(8, rect.right - PANEL_WIDTH_PX),
-      })
+      const panelHeight = panelRef.current?.getBoundingClientRect().height ?? 0
+      const spaceBelow = window.innerHeight - rect.bottom
+      const spaceAbove = rect.top
+      const openUp = panelHeight > 0 && spaceBelow < panelHeight + 8 && spaceAbove > spaceBelow
+
+      const top = openUp ? rect.top - panelHeight - 4 : rect.bottom + 4
+      const left = Math.max(8, rect.right - PANEL_WIDTH_PX)
+
+      setPosition((prev) =>
+        prev && Math.abs(prev.top - top) < 1 && Math.abs(prev.left - left) < 1 ? prev : { top, left },
+      )
     }
 
-    updatePosition()
-    window.addEventListener('scroll', updatePosition, true)
-    window.addEventListener('resize', updatePosition)
+    computePosition()
+    window.addEventListener('scroll', computePosition, true)
+    window.addEventListener('resize', computePosition)
     return () => {
-      window.removeEventListener('scroll', updatePosition, true)
-      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', computePosition, true)
+      window.removeEventListener('resize', computePosition)
     }
-  }, [open])
+  }, [open, position])
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {

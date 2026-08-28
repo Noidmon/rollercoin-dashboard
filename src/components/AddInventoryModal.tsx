@@ -234,7 +234,9 @@ export default function AddInventoryModal({
           </button>
         </div>
 
-        <div className="flex flex-nowrap items-center gap-2 overflow-x-auto border-b border-slate-800 p-3">
+        {/* Prompt 78: mais respiro (p-3 -> px-4 py-4) -- ficava espremida
+            contra a grade de cards logo abaixo, sem folga nenhuma. */}
+        <div className="flex flex-nowrap items-center gap-2 overflow-x-auto border-b border-slate-800 px-4 py-4">
           <div className="relative min-w-[90px] flex-1">
             <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2">
               <SearchIcon />
