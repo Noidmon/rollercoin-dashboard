@@ -3,7 +3,20 @@
 // código-fonte de terceiros foi copiado ou redistribuído aqui.
 import type { EventData, EventReward } from '../types/event'
 
-const RLT_PER_PH_FOR_MINER_REWARD = 0.384
+// Bug real corrigido: estava 0.384 (10x maior que o valor certo) desde a
+// implementação original -- nunca tinha sido conferido contra uma referência
+// real até agora. Confirmado com o evento real "Chop Chop" (end_date
+// 2026-08-31): com 0.384, totalValue saía ~10x inflado (6195.48 em vez de
+// ~624.84), estourando o alvo de multiplicador (target = totalValue*0.27+1)
+// pra muito além de KNOWN_MAX_MULTIPLIER (1000) -- o reduce() de "mais
+// próximo" então só conseguia grudar no teto (1000x, ratio 0.16) porque o
+// alvo real (~1674x) é inalcançável dentro do array de 1..1000. Com 0.0384,
+// o MESMO algoritmo (nenhuma outra linha mudou) reproduz manualmente os
+// números exatos de uma calculadora de referência de terceiro pro mesmo
+// evento: recommended=170x, rltToBuy=169, ratio=0.2705 (referência: 170x,
+// 169, 0.27) -- confirma que o alvo de ratio 0.27 sempre esteve certo, só a
+// escala de conversão poder->RLT estava errada.
+const RLT_PER_PH_FOR_MINER_REWARD = 0.0384
 const RLT_PER_RST = 1 / 400
 // Constante da plataforma hoje (confirmado pelo usuário). A RollerCoin pode mudar
 // isso no futuro — se o multiplicador máximo real disponível mudar, atualizar aqui.
