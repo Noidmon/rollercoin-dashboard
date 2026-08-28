@@ -2,9 +2,9 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import Card from './Card'
 import SortDropdown, { type SortDropdownOption } from './SortDropdown'
 import AddInventoryModal from './AddInventoryModal'
+import MinerBadges from './MinerBadges'
 import { formatPower } from '../utils/formatPower'
-import { getMergeLevelColor } from '../utils/minerMergeCalculator'
-import { resolveAssetUrl } from '../utils/resolveAssetUrl'
+import { isNameInAnySet, type MinerSetsData } from '../utils/minerSets'
 import type { EnrichedMinerEntry } from '../hooks/useMinersInventoryImport'
 import type { HypotheticalAddItem } from '../hooks/useHypotheticalInventory'
 
@@ -24,11 +24,6 @@ export const DRAG_ENTRY_KEY_MIME = 'application/x-rlc-inventory-entry-key'
 // de colar pra lá, deixando esse componente só com busca/ordenação/filtro/
 // paginação/grid, alimentado via prop `entries` (mesmo estado, elevado a
 // Simulador() via useMinersInventoryImport).
-
-const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X']
-function toRoman(n: number): string {
-  return ROMAN[n] ?? String(n)
-}
 
 type SortOption = 'poder_desc' | 'poder_asc' | 'bonus_desc' | 'bonus_asc'
 
@@ -59,35 +54,6 @@ function SearchIcon() {
   )
 }
 
-// Selo de nível/raridade -- mesmo asset (rollercoin/levels/level_N.webp) e
-// mesmo fallback (bloco colorido com numeral romano) já usados em
-// MineradorDetalhe.tsx (LevelBadge). Level 0 (base, ainda não fundido) não
-// tem selo -- mesma regra confirmada em minerLevelBadges (Prompt 57).
-function RarityBadge({ level }: { level: number }) {
-  const [imgFailed, setImgFailed] = useState(false)
-  if (level <= 0) return null
-
-  if (imgFailed) {
-    return (
-      <span
-        className="absolute left-1 top-1 flex h-4 w-5 items-center justify-center rounded text-[9px] font-bold text-white"
-        style={{ backgroundColor: getMergeLevelColor(level) }}
-      >
-        {toRoman(level)}
-      </span>
-    )
-  }
-
-  return (
-    <img
-      src={resolveAssetUrl(`rollercoin/levels/level_${level}.webp`)}
-      alt={toRoman(level)}
-      onError={() => setImgFailed(true)}
-      className="absolute left-1 top-1 h-4 w-5 object-contain"
-    />
-  )
-}
-
 // draggable/onDragStart/onDragEnd são opcionais -- só vêm preenchidos
 // quando o painel está ligado ao Simulador com uma sala simulada por trás
 // (sempre, hoje) -- reaproveita EXATAMENTE a mesma operação de trocar uma
@@ -100,12 +66,14 @@ function MinerCard({
   entry,
   remaining,
   isDragged,
+  setsData,
   onDragStartEntry,
   onDragEndEntry,
 }: {
   entry: EnrichedMinerEntry
   remaining?: number
   isDragged?: boolean
+  setsData: MinerSetsData | null
   onDragStartEntry?: (entry: EnrichedMinerEntry) => void
   onDragEndEntry?: () => void
 }) {
@@ -126,7 +94,7 @@ function MinerCard({
       style={{ width: CARD_WIDTH_PX }}
     >
       <div className="relative flex h-20 items-center justify-center bg-slate-900 p-2">
-        <RarityBadge level={entry.matchedLevel} />
+        <MinerBadges level={entry.matchedLevel} isInSet={setsData ? isNameInAnySet(entry.name, setsData) : false} />
         {entry.isHypothetical && (
           <span className="absolute right-1 top-1 rounded bg-amber-500 px-1 py-0.5 text-[8px] font-bold uppercase tracking-wide text-slate-950">
             Teste
@@ -155,6 +123,7 @@ export default function RoomInventoryPanel({
   entries,
   remainingByEntryKey,
   draggedEntryKey,
+  setsData,
   onDragStartEntry,
   onDragEndEntry,
   onAddHypothetical,
@@ -162,6 +131,9 @@ export default function RoomInventoryPanel({
   entries: EnrichedMinerEntry[]
   remainingByEntryKey?: Map<string, number>
   draggedEntryKey?: string | null
+  // Catálogo de sets (Prompt 81) -- usado pro selo de set nos cards (aqui
+  // e no modal "+", repassado pra lá em vez de duplicar o fetch).
+  setsData: MinerSetsData | null
   onDragStartEntry?: (entry: EnrichedMinerEntry) => void
   onDragEndEntry?: () => void
   // Callback do modal "+" (Prompt 76) -- opcional só por simetria com o
@@ -377,6 +349,7 @@ export default function RoomInventoryPanel({
                 entry={entry}
                 remaining={remainingByEntryKey?.get(entry.key)}
                 isDragged={draggedEntryKey === entry.key}
+                setsData={setsData}
                 onDragStartEntry={onDragStartEntry}
                 onDragEndEntry={onDragEndEntry}
               />
@@ -387,6 +360,7 @@ export default function RoomInventoryPanel({
 
       {addModalOpen && (
         <AddInventoryModal
+          setsData={setsData}
           onAdd={(items) => onAddHypothetical?.(items)}
           onClose={() => setAddModalOpen(false)}
         />

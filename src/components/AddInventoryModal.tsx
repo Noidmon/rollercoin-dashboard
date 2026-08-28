@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import SortDropdown, { type SortDropdownOption } from './SortDropdown'
+import MinerBadges from './MinerBadges'
 import { formatPower } from '../utils/formatPower'
+import { getMinerBonusAtLevel, getMinerPowerAtLevel, getRoomDedupMinerId } from '../utils/minerMergeCalculator'
+import { isNameInAnySet, type MinerSetsData } from '../utils/minerSets'
 import type { MinersData } from '../types/miner'
 import type { HypotheticalAddItem } from '../hooks/useHypotheticalInventory'
 
@@ -38,6 +41,13 @@ const SORT_OPTIONS: SortDropdownOption<SortOption>[] = [
 
 const CARD_WIDTH_PX = 150
 
+// Estado de seleção de UM item do catálogo -- quantidade (stepper) E nível
+// de merge escolhido (Prompt 81), independentes um do outro.
+interface Selection {
+  quantity: number
+  level: number
+}
+
 function SearchIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-slate-500">
@@ -57,26 +67,49 @@ interface MinerCatalogCardProps {
   cells: number
   bonus: number
   power: number | null
+  isInSet: boolean
+  // Níveis de merge disponíveis (já ordenados, sempre incluindo 0) -- só
+  // length>1 quando o minerador é de fato mergeable (merges[] não vazio).
+  // Vazio ([]) ou [0] sozinho pra racks/miners sem merge -- CatalogCard não
+  // mostra a fileira de nível nesse caso.
+  availableLevels: number[]
   selected: boolean
-  quantity: number
+  selection: Selection
   onSelect: () => void
   onQuantityChange: (qty: number) => void
+  onLevelChange: (level: number) => void
 }
 
 // Card clicável do catálogo -- clicar revela o stepper (- N +) SOBRE a
-// miniatura, começando em 1 (pedido explícito). `power` null pra racks
-// (racks não têm poder próprio, só bônus% -- diferente de um minerador).
+// miniatura, começando em 1 (pedido explícito). `power`/`bonus` aqui já
+// vêm recalculados pro nível ATUALMENTE selecionado (Prompt 81) -- o
+// chamador (minerItems) resolve isso via getMinerPowerAtLevel/
+// getMinerBonusAtLevel, mesma função já usada em Mineradores/Merges, não
+// duplicada aqui. `power` null pra racks (não têm poder próprio, só
+// bônus% -- diferente de um minerador).
 function CatalogCard({
   name,
   image,
   cells,
   bonus,
   power,
+  isInSet,
+  availableLevels,
   selected,
-  quantity,
+  selection,
   onSelect,
   onQuantityChange,
+  onLevelChange,
 }: MinerCatalogCardProps) {
+  // Fileira de nível só aparece quando o card está selecionado (senão não
+  // há o que escolher ainda) E o minerador tem merge de verdade (mais de
+  // um nível disponível) -- decisão de UX (Prompt 81): fica ABAIXO da
+  // miniatura, ACIMA do nome, sempre visível assim que o card é
+  // selecionado (não escondida atrás de hover na miniatura, onde já mora
+  // o stepper de quantidade -- os dois disputariam o mesmo espaço de
+  // 80px de altura, apertado demais pros dois juntos).
+  const showLevelRow = selected && availableLevels.length > 1
+
   return (
     <div
       className={`shrink-0 overflow-hidden rounded-lg border transition-colors ${
@@ -89,6 +122,7 @@ function CatalogCard({
         onClick={onSelect}
         className="relative flex h-20 w-full items-center justify-center bg-slate-900 p-2"
       >
+        <MinerBadges level={selection.level} isInSet={isInSet} />
         {image ? (
           <img src={image} alt={name} className="max-h-full max-w-full object-contain" />
         ) : (
@@ -101,15 +135,15 @@ function CatalogCard({
           >
             <button
               type="button"
-              onClick={() => onQuantityChange(Math.max(1, quantity - 1))}
+              onClick={() => onQuantityChange(Math.max(1, selection.quantity - 1))}
               className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-700 text-sm font-bold text-white hover:bg-slate-600"
             >
               −
             </button>
-            <span className="w-6 text-center text-sm font-bold text-white">{quantity}</span>
+            <span className="w-6 text-center text-sm font-bold text-white">{selection.quantity}</span>
             <button
               type="button"
-              onClick={() => onQuantityChange(quantity + 1)}
+              onClick={() => onQuantityChange(selection.quantity + 1)}
               className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-700 text-sm font-bold text-white hover:bg-slate-600"
             >
               +
@@ -117,6 +151,30 @@ function CatalogCard({
           </div>
         )}
       </button>
+
+      {showLevelRow && (
+        <div
+          className="flex flex-wrap items-center justify-center gap-1 border-t border-slate-800 bg-slate-900/60 px-1.5 py-1.5"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {availableLevels.map((lvl) => (
+            <button
+              key={lvl}
+              type="button"
+              onClick={() => onLevelChange(lvl)}
+              title={`Nível ${lvl}`}
+              className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold transition-colors ${
+                selection.level === lvl
+                  ? 'bg-indigo-500 text-white'
+                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+              }`}
+            >
+              {lvl}
+            </button>
+          ))}
+        </div>
+      )}
+
       <p className="truncate px-2 pt-1.5 text-center text-xs font-semibold text-white" title={name}>
         {name}
       </p>
@@ -128,9 +186,11 @@ function CatalogCard({
 }
 
 export default function AddInventoryModal({
+  setsData,
   onAdd,
   onClose,
 }: {
+  setsData: MinerSetsData | null
   onAdd: (items: HypotheticalAddItem[]) => void
   onClose: () => void
 }) {
@@ -139,7 +199,7 @@ export default function AddInventoryModal({
   const [mode, setMode] = useState<CatalogMode>('miners')
   const [searchText, setSearchText] = useState('')
   const [sortOption, setSortOption] = useState<SortOption>('bonus_desc')
-  const [selected, setSelected] = useState<Map<string, number>>(new Map())
+  const [selected, setSelected] = useState<Map<string, Selection>>(new Map())
 
   useEffect(() => {
     let cancelled = false
@@ -186,13 +246,25 @@ export default function AddInventoryModal({
     setSelected((prev) => {
       const next = new Map(prev)
       if (next.has(id)) next.delete(id)
-      else next.set(id, 1)
+      else next.set(id, { quantity: 1, level: 0 })
       return next
     })
   }
 
   function setQuantity(id: string, qty: number) {
-    setSelected((prev) => new Map(prev).set(id, qty))
+    setSelected((prev) => {
+      const current = prev.get(id)
+      if (!current) return prev
+      return new Map(prev).set(id, { ...current, quantity: qty })
+    })
+  }
+
+  function setLevel(id: string, level: number) {
+    setSelected((prev) => {
+      const current = prev.get(id)
+      if (!current) return prev
+      return new Map(prev).set(id, { ...current, level })
+    })
   }
 
   const selectedCount = selected.size
@@ -204,16 +276,18 @@ export default function AddInventoryModal({
     }
     const items: HypotheticalAddItem[] = []
     for (const miner of minerItems) {
-      const qty = selected.get(miner.id)
-      if (!qty || qty <= 0) continue
+      const selection = selected.get(miner.id)
+      if (!selection || selection.quantity <= 0) continue
       items.push({
         catalogId: miner.id,
+        roomDedupMinerId: getRoomDedupMinerId(miner, selection.level),
         name: miner.name,
-        power: miner.power,
-        bonus: miner.bonus,
+        power: getMinerPowerAtLevel(miner, selection.level),
+        bonus: getMinerBonusAtLevel(miner, selection.level),
         cells: miner.cells,
         image: miner.image,
-        quantity: qty,
+        quantity: selection.quantity,
+        level: selection.level,
       })
     }
     onAdd(items)
@@ -296,21 +370,35 @@ export default function AddInventoryModal({
         <div className="scrollbar-themed flex-1 overflow-y-auto p-4">
           <div className="flex flex-wrap gap-3">
             {mode === 'miners'
-              ? minerItems.slice(0, 120).map((miner) => (
-                  <CatalogCard
-                    key={miner.id}
-                    id={miner.id}
-                    name={miner.name}
-                    image={miner.image}
-                    cells={miner.cells}
-                    bonus={miner.bonus}
-                    power={miner.power}
-                    selected={selected.has(miner.id)}
-                    quantity={selected.get(miner.id) ?? 1}
-                    onSelect={() => toggleSelect(miner.id)}
-                    onQuantityChange={(qty) => setQuantity(miner.id, qty)}
-                  />
-                ))
+              ? minerItems.slice(0, 120).map((miner) => {
+                  const selection = selected.get(miner.id) ?? { quantity: 1, level: 0 }
+                  // Níveis de merge disponíveis direto de merges[] -- NUNCA
+                  // assume uma contagem fixa (alguns mineradores vão só até
+                  // nível 5, outros até 7 -- ver MinerBadges.tsx pro porquê
+                  // de 7+ usar o selo "legacy"). merges[].level já vem na
+                  // convenção de raridade do catálogo (0,2,3,4,5,6... pula o
+                  // "1"), mesma usada por getMinerPowerAtLevel/
+                  // getMinerBonusAtLevel -- sem conversão nenhuma aqui.
+                  const availableLevels = [0, ...miner.merges.map((mg) => mg.level)].sort((a, b) => a - b)
+                  return (
+                    <CatalogCard
+                      key={miner.id}
+                      id={miner.id}
+                      name={miner.name}
+                      image={miner.image}
+                      cells={miner.cells}
+                      bonus={getMinerBonusAtLevel(miner, selection.level)}
+                      power={getMinerPowerAtLevel(miner, selection.level)}
+                      isInSet={setsData ? isNameInAnySet(miner.name, setsData) : false}
+                      availableLevels={miner.mergeable ? availableLevels : [0]}
+                      selected={selected.has(miner.id)}
+                      selection={selection}
+                      onSelect={() => toggleSelect(miner.id)}
+                      onQuantityChange={(qty) => setQuantity(miner.id, qty)}
+                      onLevelChange={(level) => setLevel(miner.id, level)}
+                    />
+                  )
+                })
               : rackItems.slice(0, 120).map((rack) => (
                   <CatalogCard
                     key={rack.rackId}
@@ -320,10 +408,13 @@ export default function AddInventoryModal({
                     cells={rack.cells}
                     bonus={rack.bonus}
                     power={null}
+                    isInSet={false}
+                    availableLevels={[0]}
                     selected={false}
-                    quantity={1}
+                    selection={{ quantity: 1, level: 0 }}
                     onSelect={() => {}}
                     onQuantityChange={() => {}}
+                    onLevelChange={() => {}}
                   />
                 ))}
           </div>

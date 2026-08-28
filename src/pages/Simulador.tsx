@@ -454,6 +454,7 @@ function SimuladorContent({ playerData }: { playerData: PlayerData }) {
         entries={allEntries}
         remainingByEntryKey={remainingByEntryKey}
         draggedEntryKey={draggedEntry?.key ?? null}
+        setsData={optimizerState.setsData}
         onDragStartEntry={setDraggedEntry}
         onDragEndEntry={() => setDraggedEntry(null)}
         onAddHypothetical={hypothetical.addItems}

@@ -10,12 +10,23 @@ import type { EnrichedMinerEntry } from './useMinersInventoryImport'
 // esses itens por completo -- ver comentário em Simulador.tsx).
 export interface HypotheticalAddItem {
   catalogId: string
+  // Id de dedup pro bônus de coleção, JÁ resolvido pro nível escolhido
+  // (Prompt 81) -- mesma convenção usada por mineradores reais
+  // (getRoomDedupMinerId: id base no nível 0, merges[].mergeId em
+  // qualquer outro nível). Calculado pelo chamador (AddInventoryModal),
+  // que tem o Miner completo (com merges[]) em mãos -- esse hook só guarda
+  // o resultado, não recalcula.
+  roomDedupMinerId: string
   name: string
   power: number
   bonus: number
   cells: number
   image: string | null
   quantity: number
+  // Nível de merge escolhido no modal (Prompt 81) -- convenção de
+  // raridade do catálogo (0, 2, 3, 4, 5, 6... pula o "1"), mesma de
+  // matchedLevel pra itens reais.
+  level: number
 }
 
 export function useHypotheticalInventory() {
@@ -32,14 +43,14 @@ export function useHypotheticalInventory() {
         const key = `hyp-${item.catalogId}`
         byKey.set(key, {
           key,
-          roomDedupMinerId: item.catalogId,
+          roomDedupMinerId: item.roomDedupMinerId,
           name: item.name,
           power: item.power,
           bonus: item.bonus,
           cells: item.cells,
           image: item.image,
           quantity: item.quantity,
-          matchedLevel: 0,
+          matchedLevel: item.level,
           isHypothetical: true,
         })
       }
