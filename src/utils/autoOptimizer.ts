@@ -558,6 +558,12 @@ function buildFinalMiners(placements: OptimizerPlacement[]): RoomMinerInstance[]
     is_in_set: p.isInSet,
     placement: { user_rack_id: p.rackInstanceId, x: p.x, y: p.y },
     width: p.cells,
+    // Marca explícita de origem (Prompt 75) -- placements com
+    // origin==='installed' são o minerador ORIGINAL só reposicionado
+    // (mesma cópia física, nunca consumiu inventário); só
+    // origin==='inventory' realmente veio do inventário colado, mesmo
+    // critério usado pelo modal/drag-and-drop em simRoom.ts.
+    fromInventory: p.origin === 'inventory',
   }))
 }
 

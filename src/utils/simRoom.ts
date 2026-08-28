@@ -50,22 +50,46 @@ export function buildMinerFromInventoryEntry(
     is_in_set: setsData ? isNameInAnySet(entry.name, setsData) : undefined,
     placement: { user_rack_id: rackInstanceId, x, y },
     width: entry.cells === 2 ? 2 : 1,
+    // Marca explícita de origem (Prompt 75) -- usada por
+    // computeRemainingInventory pra só descontar do "restam N" cópias
+    // REALMENTE consumidas do inventário nesta sessão (via modal ou
+    // drag-and-drop, os dois caminhos que chamam essa função), nunca a
+    // base real já instalada desde o clone inicial de simRoom.
+    fromInventory: true,
   }
 }
 
-// Quantas cópias de cada entrada do inventário JÁ estão em uso na sala
-// simulada (colocadas manualmente OU pelo Auto-Otimizador) -- necessário
-// pro seletor de troca do modal não oferecer mais cópias do que o jogador
-// realmente possui. Casa por nome+nível (mesma chave usada pelo bônus de
+// Quantas cópias de cada entrada do inventário JÁ estão em uso NESTA
+// SESSÃO (colocadas via modal, drag-and-drop, ou Auto-Otimizador) --
+// necessário pro seletor de troca do modal não oferecer mais cópias do
+// que sobra de fato. Casa por nome+nível (mesma chave usada pelo bônus de
 // set, ver minerSets.ts) já que instâncias simuladas não têm um id estável
 // que sobreviva a re-renders.
+//
+// Bug real corrigido (Prompt 75): antes contava QUALQUER minerador de
+// simRoom.miners com o mesmo nome+nível, incluindo os que já estavam
+// FISICAMENTE instalados na sala desde antes de qualquer edição (simRoom
+// começa como clone do room-config real). Isso é semanticamente errado --
+// "instalado na sala" e "em storage" (o texto colado) são categorias
+// SEPARADAS no jogo real (a mesma peça física nunca está nas duas ao
+// mesmo tempo), então um minerador real instalado nunca deveria descontar
+// do "quanto sobra no storage colado". Investigação confirmou isso com
+// dado real (conta NoID): "La Terreta" e "Crypto Capone" apareciam como
+// "restam 0" mesmo com quantidade colada > 0, só porque o MESMO nome+nível
+// já estava instalado em algum rack -- uma cópia genuinamente diferente da
+// que está no storage, não a mesma sendo contada duas vezes. Corrigido
+// filtrando só miners com fromInventory===true (ver calculatePower.ts) --
+// a marca explícita de "isso veio do inventário NESTA sessão", setada nos
+// 3 pontos que adicionam a simRoom.miners a partir do inventário
+// (buildMinerFromInventoryEntry aqui, usado por modal+drag-and-drop; e
+// buildFinalMiners em autoOptimizer.ts, via origin==='inventory').
 export function computeRemainingInventory(
   simMiners: RoomMinerInstance[],
   entries: EnrichedMinerEntry[],
 ): Map<string, number> {
   const usedByNameLevel = new Map<string, number>()
   for (const m of simMiners) {
-    if (!m.name) continue
+    if (!m.name || !m.fromInventory) continue
     const key = `${m.name}|${m.level ?? 0}`
     usedByNameLevel.set(key, (usedByNameLevel.get(key) ?? 0) + 1)
   }

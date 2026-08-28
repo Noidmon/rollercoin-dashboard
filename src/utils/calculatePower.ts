@@ -32,6 +32,13 @@ export interface Miner {
   type?: string
   level?: number
   is_in_set?: boolean
+  // Marca que essa instância foi ADICIONADA a partir do inventário colado
+  // durante a sessão de simulação (modal, drag-and-drop, ou Auto-Otimizador)
+  // -- NUNCA presente em mineradores que já vieram do room-config real no
+  // clone inicial de simRoom (Prompt 75). Usado por computeRemainingInventory
+  // (simRoom.ts) pra descontar do "restam N" só cópias realmente consumidas
+  // nesta sessão, não a base real já instalada antes de qualquer edição.
+  fromInventory?: boolean
 }
 
 export interface Rack {
