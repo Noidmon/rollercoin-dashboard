@@ -36,6 +36,8 @@ npm run lint      # oxlint
 npm run preview   # preview do build de produção
 ```
 
+Nota: o `base` do Vite está fixado em `/rollercoin-dashboard/` (ver [Deploy](#deploy) abaixo) — `npm run dev`/`npm run preview` também servem sob esse prefixo (ex: `http://localhost:5173/rollercoin-dashboard/`), não na raiz.
+
 ### O Worker (`worker/`)
 
 O Worker faz duas coisas: (1) repassa chamadas para `rollercoin.com/api/*` adicionando os headers de CORS que o navegador exige, e (2) guarda o JSON do evento atual num namespace do Cloudflare KV, exposto em `/api/progression-data/current` (GET público, POST protegido por senha).
@@ -49,6 +51,12 @@ npx wrangler deploy
 ```
 
 A página `/admin` usa essa senha para publicar o JSON do evento atual (colado manualmente a partir dos dados públicos do jogo).
+
+## Deploy
+
+O frontend é publicado no **GitHub Pages**, automaticamente a cada push na branch `main` via `.github/workflows/deploy.yml` (build + `actions/deploy-pages`, sem branch `gh-pages` manual). Único passo manual, uma vez só: em **Settings → Pages → Source**, selecionar **GitHub Actions**.
+
+O Worker (`worker/`) é publicado à parte, direto via `npx wrangler deploy` (não faz parte deste workflow).
 
 ## Fontes de dados
 

@@ -22,6 +22,7 @@ import {
 import type { Miner as RoomMinerInstance, Rack } from '../utils/calculatePower'
 import { getRoomDedupMinerId } from '../utils/minerMergeCalculator'
 import { matchRoomMinerInstances } from '../utils/matchMinersInventory'
+import { withBase, withImageBase } from '../utils/withBase'
 import type { MinersData } from '../types/miner'
 import type { EnrichedMinerEntry } from './useMinersInventoryImport'
 import type { useRoomRemovedInventory, RoomRemovalMinerInput } from './useRoomRemovedInventory'
@@ -158,24 +159,24 @@ export function useAutoOptimizer(
 
   useEffect(() => {
     let cancelled = false
-    fetch('/data/miners.json')
+    fetch(withBase('/data/miners.json'))
       .then((res) => {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
         return res.json() as Promise<MinersData>
       })
       .then((json) => {
-        if (!cancelled) setMinersCatalog(json)
+        if (!cancelled) setMinersCatalog({ ...json, miners: withImageBase(json.miners) })
       })
       .catch(() => {
         if (!cancelled) setMinersCatalog({ generatedAt: '', total: 0, totalMerges: 0, miners: [] })
       })
-    fetch('/data/racks.json')
+    fetch(withBase('/data/racks.json'))
       .then((res) => {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
         return res.json() as Promise<{ racks: RackCatalogImageEntry[] }>
       })
       .then((json) => {
-        if (!cancelled) setRacksCatalog(json.racks)
+        if (!cancelled) setRacksCatalog(withImageBase(json.racks))
       })
       .catch(() => {
         if (!cancelled) setRacksCatalog([])

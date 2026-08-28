@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { CURRENT_EVENT } from '../data/currentEvent'
 import { getRewardImageUrl } from '../utils/parseEventJson'
 import { resolveAssetUrl } from '../utils/resolveAssetUrl'
+import { withBase } from '../utils/withBase'
 import {
   calculateRecommendedMultiplier,
   calculateEventRewardSummary,
@@ -136,13 +137,13 @@ export default function Eventos() {
   useEffect(() => {
     let cancelled = false
 
-    fetch('/data/miners.json')
+    fetch(withBase('/data/miners.json'))
       .then((res) => (res.ok ? (res.json() as Promise<MinersData>) : Promise.reject(res)))
       .then((data) => {
         if (cancelled) return
         const map = new Map<string, string>()
         for (const m of data.miners) {
-          if (m.image) map.set(m.slug, m.image)
+          if (m.image) map.set(m.slug, withBase(m.image))
         }
         setMinerImageBySlug(map)
       })

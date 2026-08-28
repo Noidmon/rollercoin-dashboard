@@ -1,0 +1,71 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # Permite disparar manualmente pela aba Actions, sem precisar de um push novo.
+  workflow_dispatch:
+
+# Evita dois deploys concorrentes pisando um no outro -- cancela o run em
+# andamento se um push novo chegar antes dele terminar.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Instala Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Instala dependências
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          # URL pública do Cloudflare Worker (proxy de CORS + KV do evento
+          # atual) -- NÃO é segredo (é só um endereço público, sem
+          # credencial nenhuma embutida), por isso fica hardcoded aqui em
+          # vez de precisar de uma Repository Variable configurada à parte
+          # no GitHub -- mais simples, o workflow funciona sozinho assim
+          # que chega no repositório, sem passo manual extra no GitHub além
+          # de habilitar o Pages em si.
+          VITE_PROXY_URL: https://rollercoin-proxy.chris-rlt.workers.dev
+
+      # SPA no GitHub Pages: sem isso, um reload/link direto numa rota tipo
+      # /simulador recebe 404 do GitHub Pages (ele serve arquivos estáticos
+      # de verdade, não sabe que o React Router deveria assumir) -- cópia de
+      # index.html como 404.html é o truque padrão (GitHub Pages sempre
+      # serve 404.html pra qualquer rota que não bate com um arquivo real,
+      # que aqui carrega o mesmo app, que aí sim resolve a rota no cliente).
+      - name: Prepara fallback de SPA (404.html)
+        run: cp dist/index.html dist/404.html
+
+      - name: Upload do artefato do Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy no GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

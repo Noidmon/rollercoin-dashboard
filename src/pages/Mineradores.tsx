@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import SortDropdown, { type SortDropdownOption } from '../components/SortDropdown'
 import { getEffectiveBonus, getEffectivePower } from '../utils/minerPower'
 import MinerStatusIcons from '../components/MinerStatusIcons'
+import { withBase, withImageBase } from '../utils/withBase'
 import type { MinersData } from '../types/miner'
 
 const PAGE_SIZE = 24
@@ -28,13 +29,13 @@ export default function Mineradores() {
   useEffect(() => {
     let cancelled = false
 
-    fetch('/data/miners.json')
+    fetch(withBase('/data/miners.json'))
       .then((res) => {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
         return res.json()
       })
       .then((json: MinersData) => {
-        if (!cancelled) setData(json)
+        if (!cancelled) setData({ ...json, miners: withImageBase(json.miners) })
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err))

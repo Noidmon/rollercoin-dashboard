@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { parseMinersInventory } from '../utils/parseMinersInventory'
 import { buildMinersByNormalizedNameMap, resolveMinerLevel } from '../utils/matchMinersInventory'
 import { getMinerBonusAtLevel, getMinerPowerAtLevel, getRoomDedupMinerId } from '../utils/minerMergeCalculator'
+import { withBase, withImageBase } from '../utils/withBase'
 import type { MinersData, Miner } from '../types/miner'
 
 export interface EnrichedMinerEntry {
@@ -50,13 +51,13 @@ export function useMinersInventoryImport() {
 
   useEffect(() => {
     let cancelled = false
-    fetch('/data/miners.json')
+    fetch(withBase('/data/miners.json'))
       .then((res) => {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
         return res.json() as Promise<MinersData>
       })
       .then((json) => {
-        if (!cancelled) setMinersData(json)
+        if (!cancelled) setMinersData({ ...json, miners: withImageBase(json.miners) })
       })
       .catch(() => {
         if (!cancelled) setMinersData({ generatedAt: '', total: 0, totalMerges: 0, miners: [] })

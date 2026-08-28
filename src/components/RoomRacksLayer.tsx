@@ -6,6 +6,7 @@ import type { EnrichedMinerEntry } from '../hooks/useMinersInventoryImport'
 import type { MinersData } from '../types/miner'
 import { getRackImageMetrics, type RackImageMetrics } from '../utils/rackTrimBox'
 import { resolveAssetUrl } from '../utils/resolveAssetUrl'
+import { withBase, withImageBase } from '../utils/withBase'
 import {
   emptyCellPixelBox,
   minerLevelBadges,
@@ -47,7 +48,7 @@ function RackImage({
   fallbackSrc: string | null
   alt: string
 }) {
-  const gameSpriteUrl = rackId ? `/racks-game-icons/${rackId}.png` : null
+  const gameSpriteUrl = rackId ? withBase(`/racks-game-icons/${rackId}.png`) : null
 
   const [gameSpriteFailed, setGameSpriteFailed] = useState(false)
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null)
@@ -167,26 +168,26 @@ export default function RoomRacksLayer({
   useEffect(() => {
     let cancelled = false
 
-    fetch('/data/racks.json')
+    fetch(withBase('/data/racks.json'))
       .then((res) => {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
         return res.json()
       })
       .then((json: RacksJson) => {
         if (cancelled) return
-        setRackImageById(new Map(json.racks.map((r) => [r.rackId, r.image])))
+        setRackImageById(new Map(json.racks.map((r) => [r.rackId, r.image ? withBase(r.image) : r.image])))
       })
       .catch(() => {
         if (!cancelled) setRackImageById(new Map())
       })
 
-    fetch('/data/miners.json')
+    fetch(withBase('/data/miners.json'))
       .then((res) => {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
         return res.json()
       })
       .then((json: MinersData) => {
-        if (!cancelled) setMinersData(json)
+        if (!cancelled) setMinersData({ ...json, miners: withImageBase(json.miners) })
       })
       .catch(() => {
         if (!cancelled) setMinersData({ generatedAt: '', total: 0, totalMerges: 0, miners: [] })

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { withBase } from '../utils/withBase'
 
 interface RoomBackgroundLayoutEntry {
   asset: string
@@ -32,7 +33,7 @@ export default function RoomBackground({ roomLevel }: RoomBackgroundProps) {
   useEffect(() => {
     let cancelled = false
 
-    fetch('/data/roomBackgroundLayout.json')
+    fetch(withBase('/data/roomBackgroundLayout.json'))
       .then((res) => {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
         return res.json()
@@ -70,7 +71,7 @@ export default function RoomBackground({ roomLevel }: RoomBackgroundProps) {
         // não implementada nesta etapa.
         <img
           key={entry.asset}
-          src={entry.asset}
+          src={withBase(entry.asset)}
           alt=""
           // max-w-none: mesma precaução do RoomRacksLayer -- o preflight do
           // Tailwind capa <img> em max-width:100% do pai por padrão, o que
