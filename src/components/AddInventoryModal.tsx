@@ -68,11 +68,22 @@ interface MinerCatalogCardProps {
   bonus: number
   power: number | null
   isInSet: boolean
-  // Níveis de merge disponíveis (já ordenados, sempre incluindo 0) -- só
-  // length>1 quando o minerador é de fato mergeable (merges[] não vazio).
-  // Vazio ([]) ou [0] sozinho pra racks/miners sem merge -- CatalogCard não
-  // mostra a fileira de nível nesse caso.
-  availableLevels: number[]
+  // Níveis de merge disponíveis (já ordenados, sempre incluindo o nível 0
+  // primeiro) -- só length>1 quando o minerador é de fato mergeable
+  // (merges[] não vazio). [{value:0,label:0}] sozinho pra racks/miners sem
+  // merge -- CatalogCard não mostra a fileira de nível nesse caso.
+  //
+  // Bug real corrigido (Prompt 82): `value` é o level BRUTO do catálogo
+  // (convenção de raridade -- 0,2,3,4,5,6... pula o "1", mesma usada por
+  // getMinerPowerAtLevel/getRoomDedupMinerId/etc, NUNCA muda) -- `label` é
+  // só a posição sequencial (0,1,2,3,4,5,6...) pra EXIBIÇÃO, sem pular
+  // número nenhum. Antes a pílula mostrava `value` direto como texto, então
+  // um minerador com merges [2,3,4,5,6] mostrava as pílulas "0 2 3 4 5 6"
+  // (nunca "1") -- confuso pro usuário, que não tem por que saber da
+  // convenção interna que pula o "1". onLevelChange (abaixo) sempre recebe
+  // `value`, nunca `label` -- o cálculo por trás (poder/bônus/dedup) nunca
+  // muda, só o texto do botão.
+  availableLevels: { value: number; label: number }[]
   selected: boolean
   selection: Selection
   onSelect: () => void
@@ -157,19 +168,19 @@ function CatalogCard({
           className="flex flex-wrap items-center justify-center gap-1 border-t border-slate-800 bg-slate-900/60 px-1.5 py-1.5"
           onClick={(e) => e.stopPropagation()}
         >
-          {availableLevels.map((lvl) => (
+          {availableLevels.map(({ value, label }) => (
             <button
-              key={lvl}
+              key={value}
               type="button"
-              onClick={() => onLevelChange(lvl)}
-              title={`Nível ${lvl}`}
+              onClick={() => onLevelChange(value)}
+              title={`Nível ${label}`}
               className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold transition-colors ${
-                selection.level === lvl
+                selection.level === value
                   ? 'bg-indigo-500 text-white'
                   : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
               }`}
             >
-              {lvl}
+              {label}
             </button>
           ))}
         </div>
@@ -375,11 +386,15 @@ export default function AddInventoryModal({
                   // Níveis de merge disponíveis direto de merges[] -- NUNCA
                   // assume uma contagem fixa (alguns mineradores vão só até
                   // nível 5, outros até 7 -- ver MinerBadges.tsx pro porquê
-                  // de 7+ usar o selo "legacy"). merges[].level já vem na
-                  // convenção de raridade do catálogo (0,2,3,4,5,6... pula o
-                  // "1"), mesma usada por getMinerPowerAtLevel/
-                  // getMinerBonusAtLevel -- sem conversão nenhuma aqui.
-                  const availableLevels = [0, ...miner.merges.map((mg) => mg.level)].sort((a, b) => a - b)
+                  // de 7+ usar o selo "legacy"). `value` é o level BRUTO do
+                  // catálogo (convenção de raridade, 0,2,3,4,5,6... pula o
+                  // "1" -- usado em getMinerPowerAtLevel/getMinerBonusAtLevel
+                  // sem conversão nenhuma); `label` é só a posição sequencial
+                  // (0,1,2,3,4,5,6...) pra exibir na pílula sem pular número
+                  // (bug real corrigido, Prompt 82 -- ver comentário em
+                  // MinerCatalogCardProps).
+                  const rawLevels = [0, ...miner.merges.map((mg) => mg.level)].sort((a, b) => a - b)
+                  const availableLevels = rawLevels.map((value, index) => ({ value, label: index }))
                   return (
                     <CatalogCard
                       key={miner.id}
@@ -390,7 +405,7 @@ export default function AddInventoryModal({
                       bonus={getMinerBonusAtLevel(miner, selection.level)}
                       power={getMinerPowerAtLevel(miner, selection.level)}
                       isInSet={setsData ? isNameInAnySet(miner.name, setsData) : false}
-                      availableLevels={miner.mergeable ? availableLevels : [0]}
+                      availableLevels={miner.mergeable ? availableLevels : [{ value: 0, label: 0 }]}
                       selected={selected.has(miner.id)}
                       selection={selection}
                       onSelect={() => toggleSelect(miner.id)}
@@ -409,7 +424,7 @@ export default function AddInventoryModal({
                     bonus={rack.bonus}
                     power={null}
                     isInSet={false}
-                    availableLevels={[0]}
+                    availableLevels={[{ value: 0, label: 0 }]}
                     selected={false}
                     selection={{ quantity: 1, level: 0 }}
                     onSelect={() => {}}
