@@ -224,7 +224,7 @@ export default function AddInventoryModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-800 bg-slate-950/60 px-4 py-3">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-white">Adicionar Item Hipotético</h2>
+          <h2 className="text-sm font-bold uppercase tracking-wide text-white">Adicionar Miner</h2>
           <button
             type="button"
             onClick={onClose}
@@ -235,8 +235,18 @@ export default function AddInventoryModal({
         </div>
 
         {/* Prompt 78: mais respiro (p-3 -> px-4 py-4) -- ficava espremida
-            contra a grade de cards logo abaixo, sem folga nenhuma. */}
-        <div className="flex flex-nowrap items-center gap-2 overflow-x-auto border-b border-slate-800 px-4 py-4">
+            contra a grade de cards logo abaixo, sem folga nenhuma.
+            Prompt 80: overflow-x-auto removido -- era copiado do painel de
+            Inventário Importado (que tem MUITO mais elementos na mesma
+            linha: busca, sort, 2 toggles de largura, toggle racks/miners,
+            setas de página, "+") sem necessidade real aqui -- esse modal só
+            tem busca+sort+toggle Miner/Rack, cabe numa linha só na largura
+            do modal (max-w-3xl) sem precisar rolar. flex-wrap no lugar de
+            flex-nowrap como rede de segurança caso a viewport fique estreita
+            o bastante pra não caber (nunca acontece na largura padrão do
+            modal, mas evita clipping silencioso em vez de reintroduzir
+            scroll). */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 px-4 py-4">
           <div className="relative min-w-[90px] flex-1">
             <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2">
               <SearchIcon />
