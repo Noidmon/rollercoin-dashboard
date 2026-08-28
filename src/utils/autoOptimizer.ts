@@ -558,6 +558,63 @@ function runPadrao(
   return placements
 }
 
+// Bug real reportado: a ordem VISUAL de qual minerador ocupa qual slot
+// dentro de uma rack não seguia nenhum critério de valor -- dependia só da
+// ordem de iteração do algoritmo de busca (poder-base decrescente pra Poder
+// Bruto, ganho marginal pra Padrão, ordem das trocas decididas pelo loop do
+// Máximo poder), nunca reordenada depois pra refletir a posição final.
+// Investigação confirmada (Prompt 86): (1) é puramente cosmético -- rackBonus
+// é uniforme por rack (mesmo valor pra toda linha/x da MESMA rack, ver
+// buildRows) e o dedup de bônus de coleção é por TIPO de minerador, nunca por
+// posição (sumRoomBonusPercentWithSets), então reordenar QUEM ocupa QUAL slot
+// dentro da MESMA rack nunca muda minersTotal/racksTotal/bonusSum -- total
+// final idêntico antes/depois; (2) não existe fonte de não-determinismo real
+// (nenhum Map/Set cuja ordem de iteração importasse aqui) -- já era
+// determinístico rodada a rodada, só não fazia sentido visualmente (não
+// bate com a referência ariel-ruiz/ROOMS, que preenche sempre do melhor pro
+// pior).
+//
+// Reordena TODOS os placements de cada rack (inclusive unchanged===true --
+// ver por quê abaixo), separando por largura (1 ou 2 células -- nunca
+// mistura um slot de largura 1 com um de largura 2, cada grupo só troca de
+// posição com outro do MESMO grupo) e reatribuindo as MESMAS posições
+// (x,y) já ocupadas por esse grupo dentro da rack, da linha mais baixa (y
+// menor, prateleira de baixo/mais visível) pra cima, maior poder primeiro
+// (bônus como desempate, também decrescente).
+//
+// Por que também reordena unchanged===true (achado testando com dado real,
+// conta NoID): uma rack pode ter uma MISTURA de instalados que o algoritmo
+// não precisou tocar (unchanged=true) com outros que ele trocou/adicionou
+// nesta rodada -- se só reordenássemos os "mudados" preservando a posição
+// exata dos "não mudados", um unchanged forte podia continuar visualmente
+// "atrás" de um mudado mais fraco (rack real "Trophy Rack 8" confirmou esse
+// caso: [5,5,4,15,5.5] em vez de [15,5.5,5,5,4], em trilhões de Gh/s). A
+// flag `unchanged` continua com o MESMO valor depois daqui -- ela descreve
+// se o algoritmo de SELEÇÃO precisou realocar essa peça pra outra
+// rack/removê-la (usado no relatório "mudanças"), não a posição visual
+// exata dentro da rack em que ela já estava -- mover só o slot (nunca a
+// rack) não afeta esse significado nem o poder total (ver comentário acima).
+function reorderPlacementsWithinRacks(placements: OptimizerPlacement[]): OptimizerPlacement[] {
+  const byRack = new Map<string, OptimizerPlacement[]>()
+  for (const p of placements) {
+    const list = byRack.get(p.rackInstanceId) ?? []
+    list.push(p)
+    byRack.set(p.rackInstanceId, list)
+  }
+
+  const reordered: OptimizerPlacement[] = []
+  for (const rackPlacements of byRack.values()) {
+    for (const cells of [1, 2] as const) {
+      const group = rackPlacements.filter((p) => p.cells === cells)
+      if (group.length === 0) continue
+      const positions = group.map((p) => ({ x: p.x, y: p.y })).sort((a, b) => a.y - b.y || a.x - b.x)
+      const sorted = [...group].sort((a, b) => b.power - a.power || b.bonusPercent - a.bonusPercent)
+      sorted.forEach((p, i) => reordered.push({ ...p, x: positions[i].x, y: positions[i].y }))
+    }
+  }
+  return reordered
+}
+
 function buildFinalMiners(placements: OptimizerPlacement[]): RoomMinerInstance[] {
   return placements.map((p) => ({
     _id: p.instanceKey,
@@ -846,6 +903,11 @@ export function runAutoOptimizer(input: AutoOptimizerInput): AutoOptimizerResult
       elapsedMs: improvement.elapsedMs,
     }
   }
+
+  // Reordenação puramente visual (Prompt 86) -- ver comentário na função:
+  // não muda poder algum, só QUAL slot cada minerador ESCOLHIDO ocupa
+  // dentro da rack em que já foi decidido que ele entra.
+  finalPlacements = reorderPlacementsWithinRacks(finalPlacements)
 
   const finalMiners = buildFinalMiners(finalPlacements)
   const after = roomPowerBreakdownNoTemp(finalMiners, racks, setsData)
