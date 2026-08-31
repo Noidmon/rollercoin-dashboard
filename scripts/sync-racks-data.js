@@ -17,6 +17,7 @@ import { writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs'
 import { join, basename, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { writeJsonIfChanged } from './lib/writeJsonIfChanged.js'
+import { fetchJson } from './lib/fetchJsonWithRetry.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
@@ -28,19 +29,13 @@ const RACKS_JSON_PATH = join(DATA_DIR, 'racks.json')
 const API_BASE = 'https://api.minaryganar.com/api/public'
 const REFERER = 'https://minaryganar.com/'
 const PAGE_SIZE = 24
-const PAGE_DELAY_MS = 150
+// Era 150ms -- ver comentário equivalente em sync-miners-data.js (429 em
+// produção na página 67/71 do sync de mineradores, mesma API).
+const PAGE_DELAY_MS = 300
 const IMAGE_DELAY_MS = 50
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-async function fetchJson(url) {
-  const response = await fetch(url, { headers: { Referer: REFERER } })
-  if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText} -- ${url}`)
-  }
-  return response.json()
 }
 
 async function fetchAllRacks() {
@@ -49,7 +44,9 @@ async function fetchAllRacks() {
   let total = 0
 
   for (;;) {
-    const data = await fetchJson(`${API_BASE}/racks?page=${page}&per_page=${PAGE_SIZE}`)
+    const data = await fetchJson(`${API_BASE}/racks?page=${page}&per_page=${PAGE_SIZE}`, {
+      headers: { Referer: REFERER },
+    })
     total = data.total
     if (data.items.length === 0) break
     rawRacks.push(...data.items)

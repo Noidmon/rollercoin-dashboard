@@ -17,6 +17,7 @@ import { writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs'
 import { join, basename, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { writeJsonIfChanged } from './lib/writeJsonIfChanged.js'
+import { fetchJson } from './lib/fetchJsonWithRetry.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
@@ -28,21 +29,16 @@ const CRAFTING_PRICES_PATH = join(DATA_DIR, 'crafting-prices.json')
 const API_BASE = 'https://api.minaryganar.com/api/public'
 const REFERER = 'https://minaryganar.com/'
 const PAGE_SIZE = 24
-const PAGE_DELAY_MS = 150
+// Era 150ms -- aumentado depois de um 429 em produção na página 67/71 (retry
+// com backoff em fetchJson é a correção principal, isso aqui só reduz a
+// chance de precisar dele).
+const PAGE_DELAY_MS = 300
 // Não pedido explicitamente, mas com ~1673 imagens únicas em jogo, um delay
 // pequeno entre downloads evita martelar o servidor de assets deles também.
 const IMAGE_DELAY_MS = 50
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-async function fetchJson(url) {
-  const response = await fetch(url, { headers: { Referer: REFERER } })
-  if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText} -- ${url}`)
-  }
-  return response.json()
 }
 
 async function fetchAllMiners() {
@@ -52,7 +48,9 @@ async function fetchAllMiners() {
   let totalMerges = 0
 
   for (;;) {
-    const data = await fetchJson(`${API_BASE}/miners?page=${page}&per_page=${PAGE_SIZE}`)
+    const data = await fetchJson(`${API_BASE}/miners?page=${page}&per_page=${PAGE_SIZE}`, {
+      headers: { Referer: REFERER },
+    })
     total = data.total
     totalMerges = data.total_merges
     rawMiners.push(...data.items)
@@ -160,7 +158,7 @@ async function syncImages(rawMiners) {
 }
 
 async function syncCraftingPrices() {
-  const data = await fetchJson(`${API_BASE}/rollercoin/craftings`)
+  const data = await fetchJson(`${API_BASE}/rollercoin/craftings`, { headers: { Referer: REFERER } })
   mkdirSync(DATA_DIR, { recursive: true })
   // Escreve incondicionalmente antes -- diferente de miners.json/racks.json/
   // miner-sets.json, esse arquivo NUNCA teve um `generatedAt` embutido, então
