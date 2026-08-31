@@ -4,7 +4,7 @@ import MinerBadges from './MinerBadges'
 import { formatPower } from '../utils/formatPower'
 import { getMinerBonusAtLevel, getMinerPowerAtLevel, getRoomDedupMinerId } from '../utils/minerMergeCalculator'
 import { isNameInAnySet, type MinerSetsData } from '../utils/minerSets'
-import { withBase, withImageBase } from '../utils/withBase'
+import { withImageBase, withCacheBust } from '../utils/withBase'
 import type { MinersData } from '../types/miner'
 import type { HypotheticalAddItem } from '../hooks/useHypotheticalInventory'
 import type { HypotheticalRackAddItem } from '../hooks/useHypotheticalRackInventory'
@@ -248,7 +248,7 @@ export default function AddInventoryModal({
 
   useEffect(() => {
     let cancelled = false
-    fetch(withBase('/data/miners.json'))
+    fetch(withCacheBust('/data/miners.json'))
       .then((res) => {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
         return res.json() as Promise<MinersData>
@@ -259,7 +259,7 @@ export default function AddInventoryModal({
       .catch(() => {
         if (!cancelled) setMinersData({ generatedAt: '', total: 0, totalMerges: 0, miners: [] })
       })
-    fetch(withBase('/data/racks.json'))
+    fetch(withCacheBust('/data/racks.json'))
       .then((res) => {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
         return res.json() as Promise<RacksJson>

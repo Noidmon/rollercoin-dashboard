@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { CURRENT_EVENT } from '../data/currentEvent'
 import { getRewardImageUrl } from '../utils/parseEventJson'
 import { resolveAssetUrl } from '../utils/resolveAssetUrl'
-import { withBase } from '../utils/withBase'
+import { withBase, withCacheBust } from '../utils/withBase'
 import {
   calculateRecommendedMultiplier,
   calculateEventRewardSummary,
@@ -137,7 +137,7 @@ export default function Eventos() {
   useEffect(() => {
     let cancelled = false
 
-    fetch(withBase('/data/miners.json'))
+    fetch(withCacheBust('/data/miners.json'))
       .then((res) => (res.ok ? (res.json() as Promise<MinersData>) : Promise.reject(res)))
       .then((data) => {
         if (cancelled) return

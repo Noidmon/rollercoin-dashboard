@@ -6,7 +6,7 @@ import PartPricesPasteCard from '../components/PartPricesPasteCard'
 import { formatPower } from '../utils/formatPower'
 import { readStoredPartPrices } from '../utils/partPriceStorage'
 import { resolveAssetUrl } from '../utils/resolveAssetUrl'
-import { withBase, withImageBase } from '../utils/withBase'
+import { withImageBase, withCacheBust } from '../utils/withBase'
 import {
   FORGE_LEVELS,
   calculateMergeCostTable,
@@ -105,11 +105,11 @@ export default function MineradorDetalhe() {
     let cancelled = false
 
     Promise.all([
-      fetch(withBase('/data/miners.json')).then((res) => {
+      fetch(withCacheBust('/data/miners.json')).then((res) => {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
         return res.json() as Promise<MinersData>
       }),
-      fetch(withBase('/data/crafting-prices.json')).then((res) => {
+      fetch(withCacheBust('/data/crafting-prices.json')).then((res) => {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
         return res.json() as Promise<CraftingPrices>
       }),

@@ -33,6 +33,16 @@ jobs:
       - name: Instala dependências
         run: npm ci
 
+      # Hash curto do commit -- vira query string de cache-busting nos
+      # fetches de public/data/*.json (ver src/utils/withBase.ts:withCacheBust).
+      # Esses JSONs têm nome fixo e são SOBRESCRITOS a cada sync (diferente
+      # do JS/CSS, que o Vite já hasheia sozinho no nome do arquivo), então
+      # sem isso o navegador podia continuar servindo uma versão em cache
+      # mesmo depois de um deploy novo com dado atualizado.
+      - name: Captura o hash do commit
+        id: build_version
+        run: echo "value=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Build
         run: npm run build
         env:
@@ -44,6 +54,7 @@ jobs:
           # que chega no repositório, sem passo manual extra no GitHub além
           # de habilitar o Pages em si.
           VITE_PROXY_URL: https://rollercoin-proxy.chris-rlt.workers.dev
+          VITE_BUILD_VERSION: ${{ steps.build_version.outputs.value }}
 
       # SPA no GitHub Pages: sem isso, um reload/link direto numa rota tipo
       # /simulador recebe 404 do GitHub Pages (ele serve arquivos estáticos

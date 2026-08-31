@@ -40,7 +40,7 @@ import {
 } from '../utils/minerMergeCalculator'
 import { getDeepestConsumedRarity } from '../utils/partCrafting'
 import { resolveAssetUrl } from '../utils/resolveAssetUrl'
-import { withBase, withImageBase } from '../utils/withBase'
+import { withImageBase, withCacheBust } from '../utils/withBase'
 import { usePlayer } from '../context/PlayerContext'
 import type { Miner, MinersData } from '../types/miner'
 
@@ -492,11 +492,11 @@ export default function Merges() {
     let cancelled = false
 
     Promise.all([
-      fetch(withBase('/data/miners.json')).then((res) => {
+      fetch(withCacheBust('/data/miners.json')).then((res) => {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
         return res.json() as Promise<MinersData>
       }),
-      fetch(withBase('/data/crafting-prices.json')).then((res) => {
+      fetch(withCacheBust('/data/crafting-prices.json')).then((res) => {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
         return res.json() as Promise<CraftingPrices>
       }),
@@ -518,7 +518,7 @@ export default function Merges() {
 
   useEffect(() => {
     let cancelled = false
-    fetch(withBase('/data/miner-sets.json'))
+    fetch(withCacheBust('/data/miner-sets.json'))
       .then((res) => {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
         return res.json() as Promise<MinerSetsData>

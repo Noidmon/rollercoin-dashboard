@@ -6,7 +6,7 @@ import { cellsAllowedForSlot, listRackSlots, type RackSlotView } from '../utils/
 import { matchRoomMinerInstances } from '../utils/matchMinersInventory'
 import { formatPower } from '../utils/formatPower'
 import type { MinersData } from '../types/miner'
-import { withBase, withImageBase } from '../utils/withBase'
+import { withImageBase, withCacheBust } from '../utils/withBase'
 
 // Modal de detalhe/edição de UMA rack na aba "Simulação" (Prompt 69) --
 // referência visual real fornecida pelo usuário (screenshot: nome+bônus no
@@ -217,7 +217,7 @@ export default function SimRackModal({
 
   useEffect(() => {
     let cancelled = false
-    fetch(withBase('/data/miners.json'))
+    fetch(withCacheBust('/data/miners.json'))
       .then((res) => {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
         return res.json() as Promise<MinersData>

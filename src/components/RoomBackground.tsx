@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { withBase } from '../utils/withBase'
+import { withBase, withCacheBust } from '../utils/withBase'
 
 interface RoomBackgroundLayoutEntry {
   asset: string
@@ -33,7 +33,7 @@ export default function RoomBackground({ roomLevel }: RoomBackgroundProps) {
   useEffect(() => {
     let cancelled = false
 
-    fetch(withBase('/data/roomBackgroundLayout.json'))
+    fetch(withCacheBust('/data/roomBackgroundLayout.json'))
       .then((res) => {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
         return res.json()

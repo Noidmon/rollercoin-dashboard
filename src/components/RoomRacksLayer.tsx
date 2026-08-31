@@ -6,7 +6,7 @@ import type { EnrichedMinerEntry } from '../hooks/useMinersInventoryImport'
 import type { MinersData } from '../types/miner'
 import { getRackImageMetrics, type RackImageMetrics } from '../utils/rackTrimBox'
 import { resolveAssetUrl } from '../utils/resolveAssetUrl'
-import { withBase, withImageBase } from '../utils/withBase'
+import { withBase, withImageBase, withCacheBust } from '../utils/withBase'
 import {
   emptyCellPixelBox,
   minerLevelBadges,
@@ -168,7 +168,7 @@ export default function RoomRacksLayer({
   useEffect(() => {
     let cancelled = false
 
-    fetch(withBase('/data/racks.json'))
+    fetch(withCacheBust('/data/racks.json'))
       .then((res) => {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
         return res.json()
@@ -181,7 +181,7 @@ export default function RoomRacksLayer({
         if (!cancelled) setRackImageById(new Map())
       })
 
-    fetch(withBase('/data/miners.json'))
+    fetch(withCacheBust('/data/miners.json'))
       .then((res) => {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
         return res.json()

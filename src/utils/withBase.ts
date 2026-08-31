@@ -25,3 +25,22 @@ export function withBase(path: string): string {
 export function withImageBase<T extends { image: string | null }>(items: T[]): T[] {
   return items.map((item) => (item.image ? { ...item, image: withBase(item.image) } : item))
 }
+
+// Cache-busting só pros JSONs de dado em public/data/ (miners.json,
+// racks.json, etc) -- eles têm nome FIXO e são sobrescritos no lugar a cada
+// sync, então o navegador pode continuar servindo uma versão velha em cache
+// mesmo depois de um deploy novo (diferente do JS/CSS, que o Vite já
+// hasheia no nome do arquivo sozinho). VITE_BUILD_VERSION vem do hash curto
+// do commit, injetado pelo workflow de deploy (ver .github/workflows/deploy.yml)
+// -- muda a cada deploy, então basta pra invalidar o cache. Em dev local
+// (sem essa variável) cai pra "dev", que não quebra nada (só não faz
+// cache-busting nenhum, o que é inofensivo com `npm run dev`).
+//
+// NÃO usar em imagens (withBase/withImageBase continuam sem isso) -- cada
+// ícone tem nome próprio e nunca é sobrescrito, cache longo nelas é
+// desejável.
+const BUILD_VERSION = import.meta.env.VITE_BUILD_VERSION || 'dev'
+
+export function withCacheBust(path: string): string {
+  return `${withBase(path)}?v=${BUILD_VERSION}`
+}

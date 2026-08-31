@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { MinerSetsData } from '../utils/minerSets'
-import { withBase } from '../utils/withBase'
+import { withCacheBust } from '../utils/withBase'
 
 // Catálogo de sets temáticos (public/data/miner-sets.json) -- compartilhado
 // entre Auto-Otimizador (useAutoOptimizer) e Dashboard (Prompt 68: "Poder
@@ -13,7 +13,7 @@ export function useMinerSetsData(): MinerSetsData | null {
 
   useEffect(() => {
     let cancelled = false
-    fetch(withBase('/data/miner-sets.json'))
+    fetch(withCacheBust('/data/miner-sets.json'))
       .then((res) => {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
         return res.json() as Promise<MinerSetsData>
