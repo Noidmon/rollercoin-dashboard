@@ -9,6 +9,9 @@ on:
 
 permissions:
   contents: write
+  # actions: write -- necessário pro passo de baixo poder disparar
+  # deploy.yml via API (workflow_dispatch), não só pro push em si.
+  actions: write
 
 jobs:
   refresh:
@@ -36,8 +39,34 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       # MESMO script usado localmente (`npm run refresh`) -- sync dos 3
-      # catálogos + commit/push automático se algo mudou. Esse push, se
-      # acontecer, dispara o workflow de deploy (.github/workflows/deploy.yml)
-      # sozinho, sem nenhuma ligação explícita necessária aqui.
+      # catálogos + commit/push automático se algo mudou. `id: refresh`
+      # pra ler o output `committed` no passo seguinte.
       - name: Roda o refresh (sync + commit + push se houver mudança)
+        id: refresh
         run: npm run refresh
+
+      # Bug real corrigido (Prompt 93): o push acima usa o GITHUB_TOKEN
+      # padrão do job -- push autenticado com GITHUB_TOKEN NÃO dispara o
+      # trigger `on: push` de OUTROS workflows no mesmo repositório (proteção
+      # nativa do GitHub contra loop infinito entre workflows). Confirmado
+      # rodando de verdade: 2 refreshes seguidos commitaram certinho (novo
+      # minerador + banner de evento sincronizados), mas "Deploy to GitHub
+      # Pages" nunca rodou pra nenhum dos dois -- o site ficou dias sem
+      # refletir dado já commitado, só "consertado" por coincidência quando
+      # um commit humano (não-bot) vinha logo depois.
+      #
+      # Corrigido disparando deploy.yml EXPLICITAMENTE via workflow_dispatch
+      # -- que é a exceção documentada à regra acima (eventos gerados por
+      # GITHUB_TOKEN não iniciam workflow novo, EXCETO workflow_dispatch/
+      # repository_dispatch). Só quando o refresh realmente commitou algo
+      # (steps.refresh.outputs.committed) -- não faz sentido disparar
+      # deploy sem mudança nenhuma pra publicar.
+      - name: Dispara o deploy (só se o refresh commitou algo)
+        if: steps.refresh.outputs.committed == 'true'
+        run: |
+          curl -sf -X POST \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            https://api.github.com/repos/Noidmon/rollercoin-dashboard/actions/workflows/deploy.yml/dispatches \
+            -d '{"ref":"main"}'

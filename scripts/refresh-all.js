@@ -1,16 +1,27 @@
 // Roda os 3 scripts de sincronização de dados em sequência e, se algo
 // mudou, commita e dá push -- reusado tanto localmente (`npm run refresh`)
 // quanto pelo workflow .github/workflows/refresh-data.yml (disparado pelo
-// botão "Atualizar Dados" da página /admin, via API do GitHub). O push
-// resultante, se acontecer, já dispara o workflow de deploy existente
-// sozinho (efeito cascata natural, nenhuma ligação explícita necessária
-// aqui com esse outro workflow).
+// botão "Atualizar Dados" da página /admin, via API do GitHub).
+//
+// Bug real encontrado (Prompt 93): o push resultante daqui é feito com o
+// GITHUB_TOKEN padrão do job (dentro do Actions) -- e push autenticado com
+// GITHUB_TOKEN NÃO dispara o trigger `on: push` de outros workflows no
+// mesmo repositório (proteção nativa do GitHub contra loop infinito entre
+// workflows). Achado rodando de verdade: 2 refreshes consecutivos
+// commitaram certinho (minerador novo + banner de evento sincronizados),
+// mas "Deploy to GitHub Pages" nunca rodou pra nenhum dos dois -- o site
+// ficou dias sem refletir dado já commitado. Corrigido expondo se ESTE
+// run commitou algo via GITHUB_OUTPUT (setCommittedOutput abaixo) --
+// refresh-data.yml usa isso pra decidir se dispara deploy.yml
+// explicitamente via workflow_dispatch (exceção documentada à regra
+// acima).
 //
 // Uso:
 //   node scripts/refresh-all.js
 //   npm run refresh
 
 import { spawn, execFileSync } from 'node:child_process'
+import { appendFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
@@ -48,6 +59,14 @@ function runScript(relativePath, { stdinData } = {}) {
       else reject(new Error(`${relativePath} saiu com código ${code}`))
     })
   })
+}
+
+// Só escreve quando rodando dentro do Actions (GITHUB_OUTPUT setado pelo
+// runner) -- no-op local, sem side-effect nenhum fora do CI.
+function setCommittedOutput(committed) {
+  const file = process.env.GITHUB_OUTPUT
+  if (!file) return
+  appendFileSync(file, `committed=${committed}\n`)
 }
 
 function hasGitChanges() {
@@ -92,6 +111,7 @@ async function main() {
   console.log('\n=== Verificando mudanças ===')
   if (!hasGitChanges()) {
     console.log('nada novo, nenhum commit necessário.')
+    setCommittedOutput(false)
     return
   }
 
@@ -104,6 +124,7 @@ async function main() {
   // `git push` puro falharia).
   git(['push', 'origin', 'HEAD:main'])
   console.log('commit e push feitos.')
+  setCommittedOutput(true)
 }
 
 main().catch((err) => {
