@@ -478,16 +478,63 @@ function takeFreeX(row: WorkingRow, cells: 1 | 2): 0 | 1 {
   return row.freeXs.shift()!
 }
 
+// Mesma leitura que takeFreeX faria, sem consumir -- usada pra montar o
+// placement TENTATIVO que vai pra validação real (abaixo) antes de decidir
+// se a célula é de fato consumida.
+function peekFreeX(row: WorkingRow, cells: 1 | 2): 0 | 1 {
+  return cells === 2 ? 0 : row.freeXs[0]
+}
+
+// Bug real corrigido (Prompt 94, "estouro de teto com Poder Bruto + Máximo
+// poder + 3.999 Zh/s -> 4.160 Zh/s"): RoomPowerTracker (acima) NUNCA soma
+// bônus de SET temático (computeSetBonusPercentCentesimos, minerSets.ts) --
+// só o dedup por tipo/nível. Bônus de set é um degrau CUMULATIVO por
+// quantidade de membros distintos possuídos (ex: 20%/50%/80% em 2/3/4
+// membros de "The Lost Treasure Set", cumulativo = salta de 70% pra 150%
+// assim que o 4º membro entra) que multiplica o poder da sala INTEIRA, não
+// só do item novo -- o tracker.previewGain usado como teto durante o
+// preenchimento (runPoderBruto/runPadrao) não tinha como prever esse salto,
+// deixando aceitar um candidato que completa/avança um set e só descobrir
+// que estourou o teto real no cálculo final (tarde demais, placement já
+// commitado).
+//
+// Correção: tracker continua servindo de FILTRO RÁPIDO pra descartar sem
+// custo o que já é claramente inviável (tracker.total nunca SUPERESTIMA o
+// total real -- bônus de set só soma, nunca subtrai da fórmula -- então
+// tracker reprovar sempre significa que o total real também reprova, sem
+// risco de falso negativo). Mas nenhum candidato é aceito DEFINITIVAMENTE só
+// por passar no tracker -- só depois de confirmar com o cálculo real
+// (totalPowerNoTemp, a MESMA função usada no resultado final, com bônus de
+// set incluído). Mesmo padrão que runIterativeImprovement já usava
+// corretamente pra troca/preenchimento na busca iterativa -- agora também
+// no preenchimento inicial.
+//
+// Custo medido com inventário real (183 itens reconhecidos, conta NoID):
+// ver comentário de performance em runAutoOptimizer.
+function realTotalWithCandidate(
+  committed: OptimizerPlacement[],
+  candidatePlacement: OptimizerPlacement,
+  racks: Rack[],
+  setsData: MinerSetsData | null,
+): number {
+  return totalPowerNoTemp(buildFinalMiners([...committed, candidatePlacement]), racks, setsData)
+}
+
 // Prioridade "Poder Bruto": ordena candidatos só por poder-base
 // descendente, preenche a primeira linha compatível que não estoure o
 // teto (tenta a próxima linha compatível se a primeira estourar -- racks
 // diferentes têm bônus diferentes, então uma linha "mais cara" pode
-// estourar enquanto outra do mesmo tamanho não estoura).
+// estourar enquanto outra do mesmo tamanho não estoura). `installedPlacements`
+// (sala real, ponto de partida) entra na validação real do teto -- ver
+// realTotalWithCandidate.
 function runPoderBruto(
   rows: WorkingRow[],
   candidates: Candidate[],
   ceilingGhs: number,
   tracker: RoomPowerTracker,
+  installedPlacements: OptimizerPlacement[],
+  racks: Rack[],
+  setsData: MinerSetsData | null,
 ): OptimizerPlacement[] {
   const sorted = [...candidates]
     .map((c, i) => ({ c, i }))
@@ -495,18 +542,30 @@ function runPoderBruto(
     .map(({ c }) => c)
 
   const placements: OptimizerPlacement[] = []
+  const committed = [...installedPlacements]
 
   for (const candidate of sorted) {
     for (const row of rows) {
       if (row.freeXs.length < candidate.cells) continue
       if (candidate.cells === 2 && row.freeXs.length !== 2) continue
 
+      // Filtro rápido (sem bônus de set) -- só descarta o que já é
+      // claramente inviável, nunca aceita definitivamente com base nisso.
       const gain = tracker.previewGain(candidate.roomDedupMinerId, candidate.bonusPercent, candidate.power, row.rackBonus)
       if (tracker.total + gain > ceilingGhs) continue
 
-      const x = takeFreeX(row, candidate.cells)
+      // Filtro rápido passou -- valida com o total REAL (com bônus de set)
+      // antes de aceitar de fato. Se estourar, esse candidato não cabe
+      // NESSA linha -- tenta a próxima (pode caber numa com rackBonus
+      // menor), sem desistir do candidato inteiro ainda.
+      const x = peekFreeX(row, candidate.cells)
+      const tentative = placementFromCandidate(candidate, row, x)
+      if (realTotalWithCandidate(committed, tentative, racks, setsData) > ceilingGhs) continue
+
+      takeFreeX(row, candidate.cells)
       tracker.commit(candidate.roomDedupMinerId, candidate.bonusPercent, candidate.power, row.rackBonus)
-      placements.push(placementFromCandidate(candidate, row, x))
+      placements.push(tentative)
+      committed.push(tentative)
       break
     }
   }
@@ -527,13 +586,20 @@ function runPadrao(
   candidates: Candidate[],
   ceilingGhs: number,
   tracker: RoomPowerTracker,
+  installedPlacements: OptimizerPlacement[],
+  racks: Rack[],
+  setsData: MinerSetsData | null,
 ): OptimizerPlacement[] {
   const groups = groupCandidates(candidates)
   const placements: OptimizerPlacement[] = []
+  const committed = [...installedPlacements]
 
   for (;;) {
-    let best: { group: CandidateGroup; row: WorkingRow; gain: number } | null = null
-
+    // Todos os pares grupo×linha que passam no filtro rápido (tracker, sem
+    // bônus de set), do maior ganho aproximado pro menor -- ordem em que a
+    // validação real (mais cara, ver realTotalWithCandidate) é tentada
+    // abaixo.
+    const viable: { group: CandidateGroup; row: WorkingRow; gain: number }[] = []
     for (const group of groups) {
       if (group.copies.length === 0) continue
       for (const row of rows) {
@@ -542,17 +608,33 @@ function runPadrao(
 
         const gain = tracker.previewGain(group.roomDedupMinerId, group.bonusPercent, group.power, row.rackBonus)
         if (tracker.total + gain > ceilingGhs) continue
-
-        if (!best || gain > best.gain) best = { group, row, gain }
+        viable.push({ group, row, gain })
       }
     }
+    viable.sort((a, b) => b.gain - a.gain)
 
-    if (!best) break
+    // Filtro rápido só descarta o claramente inviável -- aceitação
+    // definitiva sempre exige a validação real, na ordem de maior ganho
+    // aproximado primeiro (mesma heurística de escolha de antes, só que
+    // agora confirmada contra o total real antes de commitar).
+    let accepted: { group: CandidateGroup; row: WorkingRow; candidate: Candidate; x: 0 | 1; placement: OptimizerPlacement } | null =
+      null
+    for (const { group, row } of viable) {
+      const candidate = group.copies[0]
+      const x = peekFreeX(row, group.cells)
+      const placement = placementFromCandidate(candidate, row, x)
+      if (realTotalWithCandidate(committed, placement, racks, setsData) > ceilingGhs) continue
+      accepted = { group, row, candidate, x, placement }
+      break
+    }
 
-    const candidate = best.group.copies.shift()!
-    const x = takeFreeX(best.row, best.group.cells)
-    tracker.commit(candidate.roomDedupMinerId, candidate.bonusPercent, candidate.power, best.row.rackBonus)
-    placements.push(placementFromCandidate(candidate, best.row, x))
+    if (!accepted) break
+
+    accepted.group.copies.shift()
+    takeFreeX(accepted.row, accepted.group.cells)
+    tracker.commit(accepted.candidate.roomDedupMinerId, accepted.candidate.bonusPercent, accepted.candidate.power, accepted.row.rackBonus)
+    placements.push(accepted.placement)
+    committed.push(accepted.placement)
   }
 
   return placements
@@ -858,7 +940,15 @@ export function runAutoOptimizer(input: AutoOptimizerInput): AutoOptimizerResult
   // passo de troca depois, ver runSwapPass).
   const poderBrutoRows = cloneRows(baseRows)
   const poderBrutoTracker = baseTracker.clone()
-  const poderBrutoFill = runPoderBruto(poderBrutoRows, inventoryCandidates, ceilingGhs, poderBrutoTracker)
+  const poderBrutoFill = runPoderBruto(
+    poderBrutoRows,
+    inventoryCandidates,
+    ceilingGhs,
+    poderBrutoTracker,
+    installedPlacements,
+    racks,
+    setsData,
+  )
 
   let fillPlacements = poderBrutoFill
   let fillRows = poderBrutoRows
@@ -866,15 +956,29 @@ export function runAutoOptimizer(input: AutoOptimizerInput): AutoOptimizerResult
   if (priority === 'padrao') {
     const padraoRows = cloneRows(baseRows)
     const padraoTracker = baseTracker.clone()
-    const padraoFill = runPadrao(padraoRows, inventoryCandidates, ceilingGhs, padraoTracker)
+    const padraoFill = runPadrao(
+      padraoRows,
+      inventoryCandidates,
+      ceilingGhs,
+      padraoTracker,
+      installedPlacements,
+      racks,
+      setsData,
+    )
 
     // Piso de segurança: Padrão nunca pode terminar pior que Poder Bruto no
-    // poder total final (requisito explícito) -- a heurística gulosa por
-    // maior ganho marginal deveria sempre igualar ou superar uma ordenação
-    // estática por poder-base, mas comparamos os totais de qualquer forma
-    // em vez de confiar nisso por dedução matemática, garantindo o
-    // invariante por construção.
-    if (padraoTracker.total >= poderBrutoTracker.total) {
+    // poder total final (requisito explícito). Compara o total REAL (com
+    // bônus de set) dos dois resultados de preenchimento -- não mais o
+    // tracker aproximado (Prompt 94: o tracker sozinho não é confiável pra
+    // essa comparação pelo mesmo motivo que não é confiável pro teto, ver
+    // comentário em realTotalWithCandidate).
+    const poderBrutoRealTotal = totalPowerNoTemp(
+      buildFinalMiners([...installedPlacements, ...poderBrutoFill]),
+      racks,
+      setsData,
+    )
+    const padraoRealTotal = totalPowerNoTemp(buildFinalMiners([...installedPlacements, ...padraoFill]), racks, setsData)
+    if (padraoRealTotal >= poderBrutoRealTotal) {
       fillPlacements = padraoFill
       fillRows = padraoRows
     }
